@@ -39,48 +39,29 @@ except ImportError as e:
     print("Make sure Xr.py is in the same directory")
     sys.exit(1)
 
-# ==================== LOGGING SETUP (OPTIMIZED FOR RAILWAY) ====================
-LOG_FILE = "/tmp/web_debug.log"
+# ==================== LOGGING SETUP (RAILWAY OPTIMIZED) ====================
+# Railway gioi han log stdout -> chi in ERROR ra stdout, tat Werkzeug access log
 
-# Custom filter to reduce log spam
-class RailwayLogFilter(logging.Filter):
-    def filter(self, record):
-        if record.levelno == logging.DEBUG:
-            msg = record.getMessage()
-            skip_patterns = [
-                "queue empty", "buf_offset", "GeTSQDaTa", "raw_hex",
-                "SOCK2", "SOCK1", "squad_queue", "recv", "send",
-                "dbg", "DEBUG"
-            ]
-            for pattern in skip_patterns:
-                if pattern in msg:
-                    return False
-        return True
+# Tat Werkzeug request log (moi HTTP request se khong spam stdout)
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-# Ensure log directory exists
-try:
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-except:
-    pass
+# Tat cac logger khong can thiet
+for _noisy in ("urllib3", "requests", "charset_normalizer"):
+    logging.getLogger(_noisy).setLevel(logging.CRITICAL)
 
-# File handler - only WARNING and above
-file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
-file_handler.setLevel(logging.WARNING)
+# Chi ERROR tro len moi ra stdout
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setLevel(logging.ERROR)
+_stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
 
-# Stream handler for Railway - only ERROR and above
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.ERROR)
-stream_handler.addFilter(RailwayLogFilter())
+logging.basicConfig(level=logging.WARNING, handlers=[_stream_handler])
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[file_handler, stream_handler]
-)
 logger = logging.getLogger("FF_WEB")
+logger.setLevel(logging.WARNING)
 
-def dbg(msg): logger.debug(msg)
-def info(msg): logger.info(msg)
+# info/dbg = silent tren Railway; chi err() moi in ra stdout
+def dbg(msg): pass
+def info(msg): pass
 def warn(msg): logger.warning(msg)
 def err(msg): logger.error(msg)
 
@@ -394,13 +375,8 @@ class xCLF:
         threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
 
     def update_status(self, status, message=""):
-        if self.status != status or self.status_message != message:
-            self.status = status
-            self.status_message = message
-            info(f"[STATUS:{self.id}] {status} - {message}")
-        else:
-            self.status = status
-            self.status_message = message
+        self.status = status
+        self.status_message = message
 
     def GeTinFoSqMsG(self, teamcode):
         try:
@@ -495,26 +471,22 @@ class xCLF:
             return {"success": False, "reason": str(e)}
 
     def _chat_worker(self, client, owner_uid, chat_code, message, count, progress_callback=None):
+        info(f"[CHAT:{client.id}] Bắt đầu spam chat → owner={owner_uid} count={count}")
         try:
-            if not client.CliEnts:
-                return
             client.CliEnts.send(OpenCh(owner_uid, chat_code, client.key, client.iv))
             time.sleep(1)
             for i in range(count):
-                if not self._running:
-                    break
-                try:
-                    client.CliEnts.send(
-                        MsqSq(f'[b][c]{generate_random_color()}{message}', owner_uid, client.key, client.iv))
-                    if progress_callback:
-                        progress_callback(i + 1, count, "chat")
-                    time.sleep(0.5)
-                except:
-                    break
+                client.CliEnts.send(
+                    MsqSq(f'[b][c]{generate_random_color()}{message}', owner_uid, client.key, client.iv))
+                if progress_callback:
+                    progress_callback(i + 1, count, "chat")
+                time.sleep(0.5)
+            info(f"[CHAT:{client.id}] ✅ Spam chat xong {count} tin")
         except Exception as e:
-            err(f"[CHAT:{client.id}] Error: {e}")
+            err(f"[CHAT:{client.id}] _chat_worker lỗi: {e}")
 
     def _room_worker(self, client, owner_uid, count, progress_callback=None):
+        info(f"[ROOM:{client.id}] Bắt đầu spam room → uid={owner_uid} count={count}")
         try:
             if not client.CliEnts2:
                 return
@@ -522,22 +494,16 @@ class xCLF:
             iv = client.iv if isinstance(client.iv, bytes) else bytes.fromhex(client.iv)
             room_pkt = _openRoom(k, iv)
             spm_pkt = _spmRoom(k, iv, owner_uid)
-            if not room_pkt or not spm_pkt:
-                return
             client.CliEnts2.send(room_pkt)
             time.sleep(0.3)
             for i in range(count):
-                if not self._running:
-                    break
-                try:
-                    client.CliEnts2.send(spm_pkt)
-                    if progress_callback:
-                        progress_callback(i + 1, count, "room")
-                    time.sleep(0.05)
-                except:
-                    break
+                client.CliEnts2.send(spm_pkt)
+                if progress_callback:
+                    progress_callback(i + 1, count, "room")
+                time.sleep(0.05)
+            info(f"[ROOM:{client.id}] ✅ Spam room xong {count} lần")
         except Exception as e:
-            err(f"[ROOM:{client.id}] Error: {e}")
+            err(f"[ROOM:{client.id}] _room_worker lỗi: {e}")
 
     def SeNd_SpaM_MsG(self, owner_uid, chat_code, message, count=50, progress_callback=None):
         try:
@@ -571,12 +537,13 @@ class xCLF:
     def ConnEcT_SerVer_OnLiNe(self, Token, tok, host, port, key, iv, host2, port2):
         self.key = key
         self.iv = iv
-        while self._running:
+        self.update_status("connecting", f"Connecting to {host2}:{port2}")
+        while True:
             try:
-                self.CliEnts2 = socket.create_connection((host2, int(port2)), timeout=10)
+                self.CliEnts2 = socket.create_connection((host2, int(port2)))
                 self.CliEnts2.send(bytes.fromhex(tok))
                 self.update_status("connected", "Socket2 connected")
-                while self._running:
+                while True:
                     try:
                         self.CliEnts2.settimeout(1.0)
                         data = self.CliEnts2.recv(99999)
@@ -586,62 +553,56 @@ class xCLF:
                             self._squad_queue.put(data)
                     except socket.timeout:
                         continue
-                    except Exception:
+                    except Exception as e:
+                        err(f"[SOCK2:{self.id}] recv lỗi: {e}")
                         break
-                if self.CliEnts2:
-                    try:
-                        self.CliEnts2.close()
-                    except:
-                        pass
-                self.update_status("connecting", "Socket2 disconnected, reconnecting...")
             except Exception as e:
+                err(f"[SOCK2:{self.id}] Kết nối thất bại: {e}")
                 self.update_status("error", f"Socket2 error: {e}")
-                time.sleep(3)
+                time.sleep(2)
+                continue
 
     def ConnEcT_SerVer(self, Token, tok, host, port, key, iv, host2, port2):
         self.key = key
         self.iv = iv
-        while self._running:
-            try:
-                self.CliEnts = socket.create_connection((host, int(port)), timeout=10)
-                self.CliEnts.send(bytes.fromhex(tok))
-                self.CliEnts.recv(1024)
-                self.update_status("connected", "Socket1 connected")
-                break
-            except Exception as e:
-                err(f"[SOCK1:{self.id}] Connection failed: {e}")
-                time.sleep(3)
-                continue
+        self.update_status("connecting", f"Connecting to {host}:{port}")
+        try:
+            self.CliEnts = socket.create_connection((host, int(port)))
+            self.CliEnts.send(bytes.fromhex(tok))
+            self.CliEnts.recv(1024)
+            self.update_status("connected", "Socket1 connected")
+        except Exception as e:
+            err(f"[SOCK1:{self.id}] Kết nối thất bại: {e}")
+            time.sleep(2)
+            self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
+            return
 
-        # Start socket2 thread
         threading.Thread(
             target=self.ConnEcT_SerVer_OnLiNe,
             args=(Token, tok, host, port, key, iv, host2, port2),
             daemon=True).start()
 
-        # Keep socket1 alive
-        while self._running:
+        while True:
             try:
-                self.CliEnts.settimeout(5.0)
                 data = self.CliEnts.recv(1024)
                 if len(data) == 0:
-                    break
+                    self.CliEnts.close()
+                    if self.CliEnts2:
+                        try:
+                            self.CliEnts2.close()
+                        except:
+                            pass
+                    self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
+                    return
                 self.retry_count = 0
-            except socket.timeout:
-                continue
-            except Exception:
+            except Exception as e:
+                err(f"[SOCK1:{self.id}] recv lỗi: {e}")
                 self.retry_count += 1
                 if self.retry_count >= self.max_retries:
                     self.update_status("error", "Max retries reached")
-                    break
+                    return
                 time.sleep(2)
-                # Try to reconnect
-                try:
-                    self.CliEnts.close()
-                except:
-                    pass
                 self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
-                return
 
     def GeT_Key_Iv(self, serialized_data):
         try:
@@ -1713,20 +1674,19 @@ def create_templates():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     create_templates()
-    info("=" * 50)
-    info("🤖 Web Bot Starting...")
-    info(f"📁 Log file: {LOG_FILE}")
-    info(f"🌐 Web interface: http://localhost:5000")
-    info(f"🔐 Default login: {ADMIN_USERNAME} / {ADMIN_PASSWORD}")
-    info("=" * 50)
+    print("[FF_BOT] Starting...", flush=True)
     
     # Start spam server in background
     spam_thread = threading.Thread(target=start_spam_server, daemon=True)
     spam_thread.start()
     
-    # Run Flask app
+    # Run Flask - dung Werkzeug voi log tat hoat toan
     try:
-        app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+        import logging as _log
+        _log.getLogger("werkzeug").disabled = True
+        app.logger.disabled = True
+        app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)),
+                debug=False, threaded=True, use_reloader=False)
     except Exception as e:
         err(f"Failed to start server: {e}")
         sys.exit(1)
