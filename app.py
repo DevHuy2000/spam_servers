@@ -87,8 +87,10 @@ else:
 
 # ==================== FLASK CONFIG ====================
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get("SECRET_KEY", "ff-bot-secret-key-change-this-in-production-2024")
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+from datetime import timedelta
+app.permanent_session_lifetime = timedelta(hours=24)
 app.config['JSON_AS_ASCII'] = False
 
 # ==================== CẤU HÌNH ====================
