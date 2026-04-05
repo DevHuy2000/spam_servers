@@ -364,6 +364,7 @@ class xCLF:
         self.retry_count = 0
         self._squad_queue = queue.Queue()
         self._squad_active = False
+        self._sock2_started = False
         self.status = "initializing"
         self.status_message = ""
         self._running = True
@@ -565,44 +566,101 @@ class xCLF:
     def ConnEcT_SerVer(self, Token, tok, host, port, key, iv, host2, port2):
         self.key = key
         self.iv = iv
-        self.update_status("connecting", f"Connecting to {host}:{port}")
-        try:
-            self.CliEnts = socket.create_connection((host, int(port)))
-            self.CliEnts.send(bytes.fromhex(tok))
-            self.CliEnts.recv(1024)
-            self.update_status("connected", "Socket1 connected")
-        except Exception as e:
-            err(f"[SOCK1:{self.id}] Kết nối thất bại: {e}")
-            time.sleep(2)
-            self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
-            return
 
-        threading.Thread(
-            target=self.ConnEcT_SerVer_OnLiNe,
-            args=(Token, tok, host, port, key, iv, host2, port2),
-            daemon=True).start()
+        # --- Connect Socket1 ---
+        while True:
+            try:
+                self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
+                self.CliEnts.send(bytes.fromhex(tok))
+                self.CliEnts.recv(1024)
+                self.update_status("connected", "Socket1 connected")
+                break
+            except Exception as e:
+                err(f"[SOCK1:{self.id}] Connect failed: {e}")
+                self.update_status("error", f"Socket1 error: {e}")
+                # Dong socket cu truoc khi retry
+                try:
+                    self.CliEnts.close()
+                except:
+                    pass
+                self.CliEnts = None
+                time.sleep(3)
 
+        # --- Start Socket2 thread (chi start 1 lan) ---
+        if not hasattr(self, '_sock2_started') or not self._sock2_started:
+            self._sock2_started = True
+            threading.Thread(
+                target=self.ConnEcT_SerVer_OnLiNe,
+                args=(Token, tok, host, port, key, iv, host2, port2),
+                daemon=True).start()
+
+        # --- Giu Socket1 song, neu chet thi reconnect ---
         while True:
             try:
                 data = self.CliEnts.recv(1024)
                 if len(data) == 0:
-                    self.CliEnts.close()
-                    if self.CliEnts2:
+                    # Server dong ket noi
+                    try:
+                        self.CliEnts.close()
+                    except:
+                        pass
+                    self.CliEnts = None
+                    self.update_status("connecting", "Socket1 disconnected, reconnecting...")
+                    time.sleep(2)
+                    # Reconnect Socket1 trong vong lap hien tai, KHONG de quy
+                    while True:
                         try:
-                            self.CliEnts2.close()
-                        except:
-                            pass
-                    self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
-                    return
-                self.retry_count = 0
-            except Exception as e:
-                err(f"[SOCK1:{self.id}] recv lỗi: {e}")
+                            self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
+                            self.CliEnts.send(bytes.fromhex(tok))
+                            self.CliEnts.recv(1024)
+                            self.update_status("connected", "Socket1 reconnected")
+                            self.retry_count = 0
+                            break
+                        except Exception as e:
+                            err(f"[SOCK1:{self.id}] Reconnect failed: {e}")
+                            try:
+                                self.CliEnts.close()
+                            except:
+                                pass
+                            self.CliEnts = None
+                            time.sleep(3)
+                else:
+                    self.retry_count = 0
+            except OSError as e:
+                # Errno 9 (Bad file descriptor) hoac loi socket khac
+                # Khong log lien tuc — chi log 1 lan roi sleep va reconnect
+                if self.CliEnts is not None:
+                    err(f"[SOCK1:{self.id}] Socket error: {e}")
+                    try:
+                        self.CliEnts.close()
+                    except:
+                        pass
+                    self.CliEnts = None
                 self.retry_count += 1
                 if self.retry_count >= self.max_retries:
-                    self.update_status("error", "Max retries reached")
+                    self.update_status("error", "Max retries — re-login")
+                    # Re-login hoan toan thay vi loop Errno 9 mai mai
+                    self._sock2_started = False
+                    threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
                     return
-                time.sleep(2)
-                self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
+                time.sleep(3)
+                # Reconnect trong vong lap
+                try:
+                    self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
+                    self.CliEnts.send(bytes.fromhex(tok))
+                    self.CliEnts.recv(1024)
+                    self.update_status("connected", "Socket1 reconnected")
+                    self.retry_count = 0
+                except Exception as re:
+                    err(f"[SOCK1:{self.id}] Reconnect error: {re}")
+            except Exception as e:
+                err(f"[SOCK1:{self.id}] Unexpected error: {e}")
+                try:
+                    self.CliEnts.close()
+                except:
+                    pass
+                self.CliEnts = None
+                time.sleep(3)
 
     def GeT_Key_Iv(self, serialized_data):
         try:
@@ -785,6 +843,8 @@ class xCLF:
 # ==================== SPAM ACCOUNTS ====================
 SPAM_ACCOUNTS = [
     {'id': '4691534392', 'password': 'Senzu_999AA76C'},
+    {'id': '4691534385', 'password': 'Senzu_999PWV20'},
+    {'id': '4691534391', 'password': 'Senzu_999MMHME'}
 ]
 
 def start_spam_server():
@@ -1339,6 +1399,26 @@ def create_templates():
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
         @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } .container { padding: 20px; } }
         .loading { text-align: center; padding: 20px; color: rgba(255,255,255,0.6); }
+        .sub-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .sub-tab {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.07);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: rgba(255,255,255,0.6);
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .sub-tab:hover { background: rgba(255,255,255,0.12); color: white; }
+        .sub-tab.active {
+            background: linear-gradient(135deg, rgba(255,107,107,0.3), rgba(78,205,196,0.3));
+            border-color: rgba(78,205,196,0.5);
+            color: white;
+        }
+        .sub-tab-content { display: none; }
+        .sub-tab-content.active { display: block; }
     </style>
 </head>
 <body>
@@ -1359,7 +1439,6 @@ def create_templates():
         
         <div class="tabs">
             <div class="tab active" data-tab="spam">🎯 Spam Tool</div>
-            <div class="tab" data-tab="recovery">📧 Recovery Email</div>
             <div class="tab" data-tab="account">👤 Account Tools</div>
             <div class="tab" data-tab="clients">📡 Connected Clients</div>
         </div>
@@ -1385,30 +1464,35 @@ def create_templates():
             </div>
         </div>
         
-        <!-- Tab 2: Recovery Email -->
-        <div id="tab-recovery" class="tab-content">
-            <div class="card">
-                <div class="card-header">📧 Recovery Email Manager</div>
-                <div class="card-body">
-                    <div class="form-group"><label>Access Token</label><input type="text" id="recToken" placeholder="Enter access token..."></div>
-                    <div class="form-group"><label>Email</label><input type="email" id="recEmail" placeholder="Enter email..."></div>
-                    <button id="getRecoveryInfoBtn" class="btn-secondary" style="width:100%; margin-bottom:10px;">Get Recovery Info</button>
-                    <div id="recoveryInfo" class="result-box" style="display:none;"></div>
-                    <div class="form-row" style="margin-top:20px;">
-                        <button id="sendOtpBtn" style="flex:1;">Send OTP</button>
-                        <button id="cancelRecoveryBtn" class="btn-secondary" style="flex:1;">Cancel Request</button>
+        <!-- Tab 2: Account Tools (Recovery Email + Linked Platforms + Ban Account) -->
+        <div id="tab-account" class="tab-content">
+            <div class="sub-tabs">
+                <div class="sub-tab active" data-subtab="recovery">📧 Recovery Email</div>
+                <div class="sub-tab" data-subtab="linked">🔗 Linked Platforms</div>
+                <div class="sub-tab" data-subtab="ban">⚠️ Ban Account</div>
+            </div>
+
+            <div id="subtab-recovery" class="sub-tab-content active">
+                <div class="card">
+                    <div class="card-header">📧 Recovery Email Manager</div>
+                    <div class="card-body">
+                        <div class="form-group"><label>Access Token</label><input type="text" id="recToken" placeholder="Enter access token..."></div>
+                        <div class="form-group"><label>Email</label><input type="email" id="recEmail" placeholder="Enter email..."></div>
+                        <button id="getRecoveryInfoBtn" class="btn-secondary" style="width:100%; margin-bottom:10px;">Get Recovery Info</button>
+                        <div id="recoveryInfo" class="result-box" style="display:none;"></div>
+                        <div class="form-row" style="margin-top:20px;">
+                            <button id="sendOtpBtn" style="flex:1;">Send OTP</button>
+                            <button id="cancelRecoveryBtn" class="btn-secondary" style="flex:1;">Cancel Request</button>
+                        </div>
+                        <div class="form-group" style="margin-top:15px;"><label>OTP Code</label><input type="text" id="otpCode" placeholder="Enter OTP..."></div>
+                        <button id="verifyOtpBtn" style="width:100%; margin-bottom:10px;">Verify OTP</button>
+                        <div id="verifierResult" class="result-box" style="display:none;"></div>
+                        <button id="createBindBtn" style="width:100%; margin-top:10px;" disabled>Create Bind Request</button>
                     </div>
-                    <div class="form-group" style="margin-top:15px;"><label>OTP Code</label><input type="text" id="otpCode" placeholder="Enter OTP..."></div>
-                    <button id="verifyOtpBtn" style="width:100%; margin-bottom:10px;">Verify OTP</button>
-                    <div id="verifierResult" class="result-box" style="display:none;"></div>
-                    <button id="createBindBtn" style="width:100%; margin-top:10px;" disabled>Create Bind Request</button>
                 </div>
             </div>
-        </div>
-        
-        <!-- Tab 3: Account Tools -->
-        <div id="tab-account" class="tab-content">
-            <div class="grid-2">
+
+            <div id="subtab-linked" class="sub-tab-content">
                 <div class="card">
                     <div class="card-header">🔗 Linked Platforms</div>
                     <div class="card-body">
@@ -1417,6 +1501,9 @@ def create_templates():
                         <div id="linkedResult" class="result-box" style="display:none; margin-top:15px;"></div>
                     </div>
                 </div>
+            </div>
+
+            <div id="subtab-ban" class="sub-tab-content">
                 <div class="card">
                     <div class="card-header">⚠️ Ban Account</div>
                     <div class="card-body">
@@ -1428,7 +1515,7 @@ def create_templates():
             </div>
         </div>
         
-        <!-- Tab 4: Clients -->
+        <!-- Tab 3: Connected Clients -->
         <div id="tab-clients" class="tab-content">
             <div class="card">
                 <div class="card-header">📡 Connected Clients</div>
@@ -1457,6 +1544,15 @@ def create_templates():
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        document.querySelectorAll('.sub-tab').forEach(stab => {
+            stab.addEventListener('click', () => {
+                document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
+                stab.classList.add('active');
+                document.getElementById(`subtab-${stab.dataset.subtab}`).classList.add('active');
             });
         });
         
