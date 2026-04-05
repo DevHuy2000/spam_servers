@@ -518,18 +518,22 @@ class xCLF:
             err(f"[CHAT:{client.id}] CliEnts=None, bo qua")
             return
         try:
-            client.CliEnts.send(OpenCh(owner_uid, chat_code, client.key, client.iv))
+            # Chuyen sang int/str dung kieu
+            uid_int = int(owner_uid)
+            chat_str = str(chat_code)
+            client.CliEnts.send(OpenCh(uid_int, chat_str, client.key, client.iv))
             time.sleep(1)
             for i in range(count):
                 if client.CliEnts is None:
                     break
                 client.CliEnts.send(
-                    MsqSq(f'[b][c]{generate_random_color()}{message}', owner_uid, client.key, client.iv))
+                    MsqSq(f'[b][c]{generate_random_color()}{message}', uid_int, client.key, client.iv))
                 if progress_callback:
                     progress_callback(i + 1, count, "chat")
                 time.sleep(0.5)
+            err(f"[CHAT:{client.id}] Done {count} msgs → uid={uid_int}")
         except Exception as e:
-            err(f"[CHAT:{client.id}] _chat_worker lỗi: {e}")
+            err(f"[CHAT:{client.id}] _chat_worker loi: {e}")
 
     def _room_worker(self, client, owner_uid, count, progress_callback=None):
         # Doi socket2 san sang toi da 10s
@@ -541,10 +545,11 @@ class xCLF:
             err(f"[ROOM:{client.id}] CliEnts2=None, bo qua")
             return
         try:
+            uid_int = int(owner_uid)
             k = client.key if isinstance(client.key, bytes) else bytes.fromhex(client.key)
             iv = client.iv if isinstance(client.iv, bytes) else bytes.fromhex(client.iv)
             room_pkt = _openRoom(k, iv)
-            spm_pkt = _spmRoom(k, iv, owner_uid)
+            spm_pkt = _spmRoom(k, iv, uid_int)
             client.CliEnts2.send(room_pkt)
             time.sleep(0.3)
             for i in range(count):
@@ -554,8 +559,9 @@ class xCLF:
                 if progress_callback:
                     progress_callback(i + 1, count, "room")
                 time.sleep(0.05)
+            err(f"[ROOM:{client.id}] Done {count} room spam → uid={uid_int}")
         except Exception as e:
-            err(f"[ROOM:{client.id}] _room_worker lỗi: {e}")
+            err(f"[ROOM:{client.id}] _room_worker loi: {e}")
 
     def SeNd_SpaM_MsG(self, owner_uid, chat_code, message, count=50, progress_callback=None):
         try:
@@ -1749,7 +1755,10 @@ def create_templates():
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('squadInfo').style.display = 'block';
-                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4><p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p><p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>`;
+                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4>
+                        <p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p>
+                        <p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>
+                        <p><strong>Squad Code:</strong> <code>${data.SQuAD_CoDe || 'N/A'}</code></p>`;
                     document.getElementById('spamBtn').disabled = false;
                     showAlert('Squad info retrieved!', 'success');
                 } else { showAlert(`Failed: ${data.reason || data.error}`, 'error'); }
