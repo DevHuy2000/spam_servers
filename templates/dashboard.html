@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FF Bot - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+        }
+        .navbar {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .logout-btn {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .logout-btn:hover { background: rgba(255, 255, 255, 0.1); }
+        .container { max-width: 1400px; margin: 0 auto; padding: 30px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stat-title { color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-bottom: 10px; }
+        .stat-value { font-size: 32px; font-weight: 700; color: white; }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .tab.active {
+            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+            color: white;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            color: white;
+            font-size: 18px;
+        }
+        .card-body { padding: 20px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #4ecdc4;
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 15px;
+            align-items: end;
+        }
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        button:hover:not(:disabled) { transform: translateY(-2px); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: rgba(255, 255, 255, 0.1); }
+        .result-box, .squad-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .result-box h4, .squad-info h4 { color: #4ecdc4; margin-bottom: 10px; font-size: 14px; }
+        .result-box p, .squad-info p { color: rgba(255, 255, 255, 0.8); font-size: 13px; margin: 5px 0; word-break: break-all; }
+        .progress-section { margin-top: 20px; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .client-list { max-height: 300px; overflow-y: auto; }
+        .client-item {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .client-id { color: white; font-weight: 500; }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .status-connected { background: rgba(78, 205, 196, 0.2); color: #4ecdc4; }
+        .status-error { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
+        .status-logging { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .alert-success { background: rgba(78, 205, 196, 0.2); border: 1px solid #4ecdc4; color: #4ecdc4; }
+        .alert-error { background: rgba(255, 107, 107, 0.2); border: 1px solid #ff6b6b; color: #ff6b6b; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } .container { padding: 20px; } }
+        .loading { text-align: center; padding: 20px; color: rgba(255,255,255,0.6); }
+        .sub-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .sub-tab {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.07);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: rgba(255,255,255,0.6);
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .sub-tab:hover { background: rgba(255,255,255,0.12); color: white; }
+        .sub-tab.active {
+            background: linear-gradient(135deg, rgba(255,107,107,0.3), rgba(78,205,196,0.3));
+            border-color: rgba(78,205,196,0.5);
+            color: white;
+        }
+        .sub-tab-content { display: none; }
+        .sub-tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🎮 FF Bot | Free Fire OB52</div>
+        <a href="/logout" class="logout-btn">Logout →</a>
+    </nav>
+    
+    <div class="container">
+        <div id="alertContainer"></div>
+        
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-title">Connected Clients</div><div class="stat-value" id="totalClients">0</div></div>
+            <div class="stat-card"><div class="stat-title">Spam Accounts</div><div class="stat-value" id="spamAccounts">0</div></div>
+            <div class="stat-card"><div class="stat-title">Max Spam Count</div><div class="stat-value">100</div></div>
+            <div class="stat-card"><div class="stat-title">Game Version</div><div class="stat-value">OB52</div></div>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="spam">🎯 Spam Tool</div>
+            <div class="tab" data-tab="account">👤 Account Tools</div>
+            <div class="tab" data-tab="tiktok">📱 TikTok Views</div>
+            <div class="tab" data-tab="ai">🤖 AI Chat</div>
+            <div class="tab" data-tab="clients">📡 Connected Clients</div>
+        </div>
+        
+        <!-- Tab 1: Spam Tool -->
+        <div id="tab-spam" class="tab-content active">
+            <div class="card">
+                <div class="card-header">🎯 Spam Tool</div>
+                <div class="card-body">
+                    <div class="form-group"><label>Team Code</label><input type="text" id="teamcode" placeholder="Enter team code..."></div>
+                    <div class="form-group"><label>Message</label><textarea id="message" rows="3" placeholder="Enter spam message..."></textarea></div>
+                    <div class="form-row">
+                        <div class="form-group" style="margin-bottom:0;"><label>Spam Count (max 100)</label><input type="number" id="count" value="50" min="1" max="100"></div>
+                        <button id="getSquadBtn" class="btn-secondary">Get Squad Info</button>
+                    </div>
+                    <div id="squadInfo" class="squad-info" style="display:none;"></div>
+                    <div class="progress-section" id="progressSection" style="display:none;">
+                        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                        <div class="progress-text" id="progressText" style="color:rgba(255,255,255,0.6);font-size:12px;text-align:center;margin-top:5px;">Spamming...</div>
+                    </div>
+                    <button id="spamBtn" style="width:100%; margin-top:20px;" disabled>Start Spam</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab 2: Account Tools (Recovery Email + Linked Platforms + Ban Account) -->
+        <div id="tab-account" class="tab-content">
+            <div class="sub-tabs">
+                <div class="sub-tab active" data-subtab="recovery">📧 Recovery Email</div>
+                <div class="sub-tab" data-subtab="linked">🔗 Linked Platforms</div>
+                <div class="sub-tab" data-subtab="ban">⚠️ Ban Account</div>
+            </div>
+
+            <div id="subtab-recovery" class="sub-tab-content active">
+                <div class="card">
+                    <div class="card-header">📧 Recovery Email Manager</div>
+                    <div class="card-body">
+                        <div class="form-group"><label>Access Token</label><input type="text" id="recToken" placeholder="Enter access token..."></div>
+                        <div class="form-group"><label>Email</label><input type="email" id="recEmail" placeholder="Enter email..."></div>
+                        <button id="getRecoveryInfoBtn" class="btn-secondary" style="width:100%; margin-bottom:10px;">Get Recovery Info</button>
+                        <div id="recoveryInfo" class="result-box" style="display:none;"></div>
+                        <div class="form-row" style="margin-top:20px;">
+                            <button id="sendOtpBtn" style="flex:1;">Send OTP</button>
+                            <button id="cancelRecoveryBtn" class="btn-secondary" style="flex:1;">Cancel Request</button>
+                        </div>
+                        <div class="form-group" style="margin-top:15px;"><label>OTP Code</label><input type="text" id="otpCode" placeholder="Enter OTP..."></div>
+                        <button id="verifyOtpBtn" style="width:100%; margin-bottom:10px;">Verify OTP</button>
+                        <div id="verifierResult" class="result-box" style="display:none;"></div>
+                        <button id="createBindBtn" style="width:100%; margin-top:10px;" disabled>Create Bind Request</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="subtab-linked" class="sub-tab-content">
+                <div class="card">
+                    <div class="card-header">🔗 Linked Platforms</div>
+                    <div class="card-body">
+                        <div class="form-group"><label>Access Token</label><input type="text" id="linkedToken" placeholder="Enter access token..."></div>
+                        <button id="getLinkedBtn" style="width:100%;">Get Linked Platforms</button>
+                        <div id="linkedResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="subtab-ban" class="sub-tab-content">
+                <div class="card">
+                    <div class="card-header">⚠️ Ban Account</div>
+                    <div class="card-body">
+                        <div class="form-group"><label>Access Token</label><input type="text" id="banToken" placeholder="Enter access token..."></div>
+                        <button id="banAccountBtn" style="width:100%; background: linear-gradient(135deg, #ff6b6b, #ff4444);">Ban Account</button>
+                        <div id="banResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab 3: TikTok Views -->
+        <div id="tab-tiktok" class="tab-content">
+            <div class="card">
+                <div class="card-header">📱 TikTok Buff Views</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Link Video TikTok</label>
+                        <input type="text" id="tiktokLink" placeholder="https://www.tiktok.com/@user/video/...">
+                    </div>
+                    <button id="buffViewsBtn" style="width:100%;">🚀 Buff Views</button>
+                    <div id="tiktokResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 4: AI Chat -->
+        <div id="tab-ai" class="tab-content">
+            <div class="card">
+                <div class="card-header">🤖 AI Chat (Gemini)</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Nhập câu hỏi</label>
+                        <textarea id="aiPrompt" rows="4" placeholder="Nhập câu hỏi cho Gemini AI..."></textarea>
+                    </div>
+                    <button id="aiAskBtn" style="width:100%;">🚀 Gửi</button>
+                    <div id="aiResult" class="result-box" style="display:none; margin-top:15px; white-space:pre-wrap; line-height:1.6;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 5: Connected Clients -->
+        <div id="tab-clients" class="tab-content">
+            <div class="card">
+                <div class="card-header">📡 Connected Clients</div>
+                <div class="card-body">
+                    <div class="client-list" id="clientList"><div class="loading">Loading...</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let verifierToken = null;
+        
+        function showAlert(message, type) {
+            const container = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.innerHTML = message;
+            container.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+        
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                var el = document.getElementById('tab-' + tab.dataset.tab); if(el) el.classList.add('active');
+            });
+        });
+
+        document.querySelectorAll('.sub-tab').forEach(stab => {
+            stab.addEventListener('click', () => {
+                document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
+                stab.classList.add('active');
+                document.getElementById(`subtab-${stab.dataset.subtab}`).classList.add('active');
+            });
+        });
+        
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                document.getElementById('totalClients').textContent = data.total_clients;
+                document.getElementById('spamAccounts').textContent = data.spam_accounts.length;
+                const clientList = document.getElementById('clientList');
+                if (data.total_clients === 0) {
+                    clientList.innerHTML = '<div class="loading">No connected clients</div>';
+                } else {
+                    clientList.innerHTML = '';
+                    for (const [uid, client] of Object.entries(data.clients)) {
+                        const div = document.createElement('div');
+                        div.className = 'client-item';
+                        div.innerHTML = `<span class="client-id">${client.id}</span><span class="status-badge status-${client.status}">${client.status}</span>`;
+                        clientList.appendChild(div);
+                    }
+                }
+            } catch(e) { console.error(e); }
+        }
+        
+        async function getSquadInfo() {
+            const teamcode = document.getElementById('teamcode').value.trim();
+            if (!teamcode) { showAlert('Enter team code', 'error'); return; }
+            const btn = document.getElementById('getSquadBtn');
+            btn.disabled = true; btn.textContent = 'Loading...';
+            try {
+                const response = await fetch('/api/get_squad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamcode }) });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('squadInfo').style.display = 'block';
+                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4><p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p><p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>`;
+                    document.getElementById('spamBtn').disabled = false;
+                    showAlert('Squad info retrieved!', 'success');
+                } else { showAlert(`Failed: ${data.reason || data.error}`, 'error'); }
+            } catch(e) { showAlert('Failed to get squad info', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Get Squad Info'; }
+        }
+        
+        async function startSpam() {
+            const teamcode = document.getElementById('teamcode').value.trim();
+            const message = document.getElementById('message').value.trim();
+            const count = parseInt(document.getElementById('count').value);
+            if (!teamcode || !message) { showAlert('Fill all fields', 'error'); return; }
+            const spamBtn = document.getElementById('spamBtn');
+            spamBtn.disabled = true; spamBtn.textContent = 'Spamming...';
+            const progressSection = document.getElementById('progressSection');
+            progressSection.style.display = 'block';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Starting spam...';
+            try {
+                const response = await fetch('/api/spam', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamcode, message, count }) });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('progressFill').style.width = '100%';
+                    document.getElementById('progressText').textContent = `✅ Completed! Sent ${data.spam_count} messages.`;
+                    showAlert(`Spam completed! Sent ${data.spam_count} messages.`, 'success');
+                } else {
+                    document.getElementById('progressText').textContent = `❌ Failed: ${data.error}`;
+                    showAlert(`Failed: ${data.error}`, 'error');
+                }
+            } catch(e) { showAlert('Failed to start spam', 'error'); }
+            finally {
+                spamBtn.disabled = false; spamBtn.textContent = 'Start Spam';
+                setTimeout(() => { progressSection.style.display = 'none'; }, 3000);
+            }
+        }
+        
+        async function getRecoveryInfo() {
+            const token = document.getElementById('recToken').value.trim();
+            if (!token) { showAlert('Enter access token', 'error'); return; }
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Loading...';
+            try {
+                const response = await fetch('/api/recovery/get_info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const data = await response.json();
+                const infoDiv = document.getElementById('recoveryInfo');
+                if (data.success) {
+                    infoDiv.style.display = 'block';
+                    infoDiv.innerHTML = `<h4>📋 Recovery Info</h4><p>${data.status}</p>`;
+                } else { infoDiv.style.display = 'block'; infoDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`; }
+            } catch(e) { showAlert('Failed to get info', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Get Recovery Info'; }
+        }
+        
+        async function sendOtp() {
+            const email = document.getElementById('recEmail').value.trim();
+            const token = document.getElementById('recToken').value.trim();
+            if (!email || !token) { showAlert('Enter email and token', 'error'); return; }
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Sending...';
+            try {
+                const response = await fetch('/api/recovery/send_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, access_token: token }) });
+                const data = await response.json();
+                if (data.success) showAlert('OTP sent! Check your email.', 'success');
+                else showAlert(`Failed: ${data.error}`, 'error');
+            } catch(e) { showAlert('Failed to send OTP', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Send OTP'; }
+        }
+        
+        async function verifyOtp() {
+            const otp = document.getElementById('otpCode').value.trim();
+            const email = document.getElementById('recEmail').value.trim();
+            const token = document.getElementById('recToken').value.trim();
+            if (!otp || !email || !token) { showAlert('Enter OTP, email and token', 'error'); return; }
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Verifying...';
+            try {
+                const response = await fetch('/api/recovery/verify_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp, email, access_token: token }) });
+                const data = await response.json();
+                const resultDiv = document.getElementById('verifierResult');
+                if (data.success) {
+                    verifierToken = data.verifier_token;
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<h4>✅ OTP Verified!</h4><p>Verifier Token: <code>${verifierToken.substring(0, 30)}...</code></p>`;
+                    document.getElementById('createBindBtn').disabled = false;
+                    showAlert('OTP verified!', 'success');
+                } else {
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<h4>❌ Verification Failed</h4><p>${data.error}</p>`;
+                }
+            } catch(e) { showAlert('Failed to verify OTP', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Verify OTP'; }
+        }
+        
+        async function createBind() {
+            if (!verifierToken) { showAlert('Verify OTP first', 'error'); return; }
+            const email = document.getElementById('recEmail').value.trim();
+            const token = document.getElementById('recToken').value.trim();
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Processing...';
+            try {
+                const response = await fetch('/api/recovery/create_bind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verifier_token: verifierToken, access_token: token, email }) });
+                const data = await response.json();
+                if (data.success) { showAlert(data.message, 'success'); verifierToken = null; document.getElementById('createBindBtn').disabled = true; }
+                else showAlert(`Failed: ${data.error}`, 'error');
+            } catch(e) { showAlert('Failed to create bind', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Create Bind Request'; }
+        }
+        
+        async function cancelRecovery() {
+            const token = document.getElementById('recToken').value.trim();
+            if (!token) { showAlert('Enter access token', 'error'); return; }
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Cancelling...';
+            try {
+                const response = await fetch('/api/recovery/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const data = await response.json();
+                if (data.success) showAlert('Request cancelled', 'success');
+                else showAlert(`Failed: ${data.error}`, 'error');
+            } catch(e) { showAlert('Failed to cancel', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Cancel Request'; }
+        }
+        
+        async function getLinkedPlatforms() {
+            const token = document.getElementById('linkedToken').value.trim();
+            if (!token) { showAlert('Enter access token', 'error'); return; }
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Loading...';
+            try {
+                const response = await fetch('/api/account/linked_platforms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const data = await response.json();
+                const resultDiv = document.getElementById('linkedResult');
+                if (data.success) {
+                    let html = `<h4>🔗 Linked Platforms</h4><p><strong>Main Platform:</strong> ${data.main_platform || 'N/A'}</p>`;
+                    if (data.platforms.length > 0) {
+                        html += '<p><strong>Linked Accounts:</strong></p>';
+                        data.platforms.forEach(p => { html += `<p>• ${p.platform}: ${p.email || p.nickname || 'N/A'}</p>`; });
+                    } else html += '<p>No linked platforms found.</p>';
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = html;
+                } else { resultDiv.style.display = 'block'; resultDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`; }
+            } catch(e) { showAlert('Failed to get platforms', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Get Linked Platforms'; }
+        }
+        
+        async function banAccount() {
+            const token = document.getElementById('banToken').value.trim();
+            if (!token) { showAlert('Enter access token', 'error'); return; }
+            if (!confirm('⚠️ WARNING: This will attempt to ban the account! Are you sure?')) return;
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = 'Processing...';
+            try {
+                const response = await fetch('/api/account/ban', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const data = await response.json();
+                const resultDiv = document.getElementById('banResult');
+                if (data.success) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<h4>⚠️ Ban Request Sent</h4><p>Account ID: ${data.account_id}<br>Platform: ${data.platform}</p>`;
+                    showAlert('Ban request sent!', 'success');
+                } else { resultDiv.style.display = 'block'; resultDiv.innerHTML = `<h4>❌ Failed</h4><p>${data.error}</p>`; }
+            } catch(e) { showAlert('Failed to process ban', 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Ban Account'; }
+        }
+        
+        document.getElementById('getSquadBtn').addEventListener('click', getSquadInfo);
+        document.getElementById('spamBtn').addEventListener('click', startSpam);
+        document.getElementById('getRecoveryInfoBtn').addEventListener('click', getRecoveryInfo);
+        document.getElementById('sendOtpBtn').addEventListener('click', sendOtp);
+        document.getElementById('verifyOtpBtn').addEventListener('click', verifyOtp);
+        document.getElementById('createBindBtn').addEventListener('click', createBind);
+        document.getElementById('cancelRecoveryBtn').addEventListener('click', cancelRecovery);
+        document.getElementById('getLinkedBtn').addEventListener('click', getLinkedPlatforms);
+        document.getElementById('banAccountBtn').addEventListener('click', banAccount);
+
+        async function buffViews() {
+            const link = document.getElementById('tiktokLink').value.trim();
+            if (!link) { showAlert('Nhập link TikTok', 'error'); return; }
+            const btn = document.getElementById('buffViewsBtn');
+            const resultDiv = document.getElementById('tiktokResult');
+            btn.disabled = true; btn.textContent = 'Đang xử lý...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.6);">⏳ Đang gửi request...</p>';
+            try {
+                const resp = await fetch('/api/tiktok/buff_views', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({link})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    resultDiv.innerHTML = `<h4>✅ Thành công!</h4><p>Thời gian: ${data.elapsed}s</p><p>Response: <code>${JSON.stringify(data.response)}</code></p>`;
+                    showAlert('Buff views thành công!', 'success');
+                } else {
+                    resultDiv.innerHTML = `<h4>❌ Thất bại</h4><p>${data.error || 'Unknown error'}</p>`;
+                }
+            } catch(e) {
+                resultDiv.innerHTML = `<h4>❌ Lỗi kết nối</h4><p>${e.message}</p>`;
+            }
+            btn.disabled = false; btn.textContent = '🚀 Buff Views';
+        }
+        document.getElementById('buffViewsBtn').addEventListener('click', buffViews);
+
+        async function askAI() {
+            var prompt = document.getElementById('aiPrompt').value.trim();
+            if (!prompt) { showAlert('Nhập câu hỏi trước', 'error'); return; }
+            var btn = document.getElementById('aiAskBtn');
+            var resultDiv = document.getElementById('aiResult');
+            btn.disabled = true; btn.textContent = 'Đang gửi...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.5);">⏳ Đang chờ Gemini trả lời...</p>';
+            try {
+                var resp = await fetch('/api/ai/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt: prompt})
+                });
+                var data = await resp.json();
+                if (data.success) {
+                    var rt = (data.metadata && data.metadata.response_time) ? data.metadata.response_time : '';
+                    var txt = data.response.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+                    resultDiv.innerHTML = '<h4 style="color:#4ecdc4;">✅ Gemini ' + rt + '</h4><p style="margin-top:8px;">' + txt + '</p>';
+                } else {
+                    resultDiv.innerHTML = '<h4 style="color:#ff6b6b;">❌ Lỗi: ' + (data.error || 'Unknown') + '</h4>';
+                }
+            } catch(e) {
+                resultDiv.innerHTML = '<h4 style="color:#ff6b6b;">❌ Lỗi kết nối: ' + e.message + '</h4>';
+            }
+            btn.disabled = false; btn.textContent = '🚀 Gửi';
+        }
+        document.getElementById('aiAskBtn').addEventListener('click', askAI);
+        
+        loadStatus();
+        setInterval(loadStatus, 10000);
+    </script>
+</body>
+</html>
