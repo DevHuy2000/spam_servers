@@ -16,6 +16,8 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from google.protobuf.timestamp_pb2 import Timestamp
 import logging
+import uuid
+from bs4 import BeautifulSoup
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -899,6 +901,149 @@ class xCLF:
         except Exception as e:
             self.update_status("error", f"Login error: {e}")
 
+# ==================== GEMINI AI ====================
+def _gem_extract_token(html):
+    patterns = [
+        r'"SNlM0e":"([^"]+)"', r"'SNlM0e':'([^']+)'",
+        r'"FdrFJe":"([^"]+)"', r"'FdrFJe':'([^']+)'",
+        r'"cfb2h":"([^"]+)"', r"'cfb2h':'([^']+)'",
+        r'"at":"([^"]+)"', r'"token":"([^"]+)"',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m and len(m.group(1)) > 20:
+            return m.group(1)
+    return None
+
+def _gem_extract_from_scripts(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    for script in soup.find_all('script'):
+        if script.string and ('SNlM0e' in script.string or 'FdrFJe' in script.string):
+            token = _gem_extract_token(script.string)
+            if token:
+                return token
+    return None
+
+def _gem_extract_params(html):
+    params = {}
+    for pattern in [r'"bl":"([^"]+)"', r'boq[_-]assistant[^"\']*_(\d+\.\d+[^"\']*)', r'/_/BardChatUi.*?bl=([^&"\']+)']:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            params['bl'] = m.group(1)
+            break
+    for pattern in [r'f\.sid["\']?\s*[=:]\s*["\']?([^"\'&\s]+)', r'"fsid":"([^"]+)"', r'f\.sid=([^&"\']+)']:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            params['fsid'] = m.group(1)
+            break
+    m = re.search(r'_reqid["\']?\s*[=:]\s*["\']?(\d+)', html)
+    if m:
+        params['reqid'] = int(m.group(1))
+    params.setdefault('bl', 'boq_assistant-bard-web-server_20251217.07_p5')
+    params.setdefault('fsid', str(-1 * int(time.time() * 1000)))
+    params.setdefault('reqid', int(time.time() * 1000) % 1000000)
+    return params
+
+def _gem_scrape_session():
+    import requests as _req
+    sess = _req.Session()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'sec-fetch-site': 'none', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document',
+        'upgrade-insecure-requests': '1', 'cache-control': 'no-cache',
+    }
+    try:
+        resp = sess.get('https://gemini.google.com/app', headers=headers, timeout=30)
+        html = resp.text
+        cookies = {c.name: c.value for c in sess.cookies}
+        snlm0e = _gem_extract_token(html) or _gem_extract_from_scripts(html)
+        if not snlm0e:
+            return None
+        params = _gem_extract_params(html)
+        return {'session': sess, 'cookies': cookies, 'snlm0e': snlm0e, **params}
+    except Exception as e:
+        err(f"[GEMINI] scrape_session error: {e}")
+        return None
+
+def _gem_build_payload(prompt, snlm0e):
+    escaped = prompt.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+    session_id = uuid.uuid4().hex
+    req_uuid = str(uuid.uuid4()).upper()
+    payload_data = [
+        [escaped, 0, None, None, None, None, 0], ["en-US"],
+        ["", "", "", None, None, None, None, None, None, ""],
+        snlm0e, session_id, None, [0], 1, None, None, 1, 0,
+        None, None, None, None, None, [[0]], 0, None, None, None, None,
+        None, None, None, None, 1, None, None, [4], None, None, None,
+        None, None, None, None, None, None, None, [2], None, None, None,
+        None, None, None, None, None, None, None, None, 0, None, None,
+        None, None, None, req_uuid, None, []
+    ]
+    payload_str = json.dumps(payload_data, separators=(',', ':'))
+    escaped_payload = payload_str.replace('\\', '\\\\').replace('"', '\\"')
+    return {'f.req': f'[null,"{escaped_payload}"]', '': ''}
+
+def _gem_parse_response(text):
+    full_text = ""
+    for line in text.strip().split('\n'):
+        if not line or line.startswith(')]}') or line.isdigit():
+            continue
+        try:
+            data = json.loads(line)
+            if isinstance(data, list) and data and data[0][0] == "wrb.fr" and len(data[0]) > 2:
+                inner = data[0][2]
+                if inner:
+                    parsed = json.loads(inner)
+                    if isinstance(parsed, list) and len(parsed) > 4:
+                        content = parsed[4]
+                        if isinstance(content, list) and content:
+                            item = content[0]
+                            if isinstance(item, list) and item and isinstance(item[0], str) and item[0].startswith('rc_'):
+                                if len(item) > 1 and isinstance(item[1], list) and item[1]:
+                                    txt = item[1][0]
+                                    if isinstance(txt, str) and len(txt) > len(full_text):
+                                        full_text = txt
+        except:
+            continue
+    if full_text:
+        full_text = full_text.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+    return full_text or None
+
+def chat_with_gemini(prompt):
+    t0 = time.time()
+    scraped = _gem_scrape_session()
+    if not scraped:
+        return {'success': False, 'error': 'Không thể kết nối Gemini (thiếu session/token)'}
+    sess = scraped['session']
+    cookies = scraped['cookies']
+    snlm0e = scraped['snlm0e']
+    bl = scraped['bl']
+    fsid = scraped['fsid']
+    reqid = scraped['reqid']
+    url = f"https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?bl={bl}&f.sid={fsid}&hl=en-US&_reqid={reqid}&rt=c"
+    payload = _gem_build_payload(prompt, snlm0e)
+    cookie_str = '; '.join([f"{k}={v}" for k, v in cookies.items()])
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'x-same-domain': '1', 'origin': 'https://gemini.google.com',
+        'referer': 'https://gemini.google.com/', 'Cookie': cookie_str,
+    }
+    try:
+        resp = sess.post(url, data=payload, headers=headers, timeout=60)
+        if resp.status_code != 200:
+            return {'success': False, 'error': f'HTTP {resp.status_code}'}
+        result = _gem_parse_response(resp.text)
+        elapsed = round(time.time() - t0, 2)
+        if result:
+            return {'success': True, 'response': result,
+                    'metadata': {'response_time': f'{elapsed}s', 'model': 'gemini'}}
+        return {'success': False, 'error': 'Gemini không trả về nội dung (có thể cần cookie đăng nhập)'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
 # ==================== SPAM ACCOUNTS ====================
 SPAM_ACCOUNTS = [
     {'id': '4691534392', 'password': 'Senzu_999AA76C'},
@@ -1237,6 +1382,20 @@ def api_tiktok_buff_views():
     if not link:
         return jsonify({'success': False, 'error': 'Link TikTok là bắt buộc'})
     result = _tiktok_send_views(link)
+    return jsonify(result)
+
+# ==================== GEMINI AI API ====================
+@app.route('/api/ai/ask', methods=['GET', 'POST'])
+@login_required
+def api_ai_ask():
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        prompt = data.get('prompt', '').strip()
+    else:
+        prompt = request.args.get('prompt', '').strip()
+    if not prompt:
+        return jsonify({'success': False, 'error': 'Thiếu prompt'})
+    result = chat_with_gemini(prompt)
     return jsonify(result)
 
 # ==================== HEALTH CHECK ====================
@@ -1593,6 +1752,7 @@ def create_templates():
             <div class="tab active" data-tab="spam">🎯 Spam Tool</div>
             <div class="tab" data-tab="account">👤 Account Tools</div>
             <div class="tab" data-tab="tiktok">📱 TikTok Views</div>
+            <div class="tab" data-tab="ai">🤖 AI Chat</div>
             <div class="tab" data-tab="clients">📡 Connected Clients</div>
         </div>
         
@@ -1679,6 +1839,21 @@ def create_templates():
                     </div>
                     <button id="buffViewsBtn" style="width:100%;">🚀 Buff Views</button>
                     <div id="tiktokResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab AI Chat -->
+        <div id="tab-ai" class="tab-content">
+            <div class="card">
+                <div class="card-header">🤖 AI Chat (Gemini)</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Nhập câu hỏi</label>
+                        <textarea id="aiPrompt" rows="3" placeholder="Nhập câu hỏi cho AI..."></textarea>
+                    </div>
+                    <button id="aiAskBtn" style="width:100%;">🚀 Gửi</button>
+                    <div id="aiResult" class="result-box" style="display:none; margin-top:15px; white-space:pre-wrap;"></div>
                 </div>
             </div>
         </div>
@@ -1963,6 +2138,37 @@ def create_templates():
         document.getElementById('getLinkedBtn').addEventListener('click', getLinkedPlatforms);
         document.getElementById('banAccountBtn').addEventListener('click', banAccount);
         document.getElementById('buffViewsBtn').addEventListener('click', buffViews);
+        
+        async function askAI() {
+            const prompt = document.getElementById('aiPrompt').value.trim();
+            if (!prompt) { showAlert('Nhập câu hỏi trước', 'error'); return; }
+            const btn = document.getElementById('aiAskBtn');
+            const resultDiv = document.getElementById('aiResult');
+            btn.disabled = true; btn.textContent = '⏳ Đang hỏi AI...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.6);">⏳ Đang chờ phản hồi từ Gemini...</p>';
+            try {
+                const response = await fetch('/api/ai/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    const rt = data.metadata ? data.metadata.response_time : '';
+                    const txt = data.response.replace(/\n/g, '<br>');
+                    resultDiv.innerHTML = '<h4>✅ Gemini trả lời <small style="color:rgba(255,255,255,0.5);">' + rt + '</small></h4><p>' + txt + '</p>';
+                } else {
+                    resultDiv.innerHTML = '<h4>❌ Lỗi</h4><p>' + data.error + '</p>';
+                    showAlert(data.error, 'error');
+                }
+            } catch(e) {
+                resultDiv.innerHTML = '<h4>❌ Lỗi kết nối</h4><p>' + e.message + '</p>';
+            } finally {
+                btn.disabled = false; btn.textContent = '🚀 Gửi';
+            }
+        }
+        document.getElementById('aiAskBtn').addEventListener('click', askAI);
         
         loadStatus();
         setInterval(loadStatus, 10000);

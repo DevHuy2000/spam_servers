@@ -8,3 +8,4 @@ urllib3
 pycryptodome
 protobuf_decoder
 Flask
+beautifulsoup4
