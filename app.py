@@ -428,7 +428,7 @@ class xCLF:
             start = time.time()
             last_join_time = time.time()
 
-            while time.time() - start < 15 and self._running:
+            while time.time() - start < 25 and self._running:
                 try:
                     chunk = self._squad_queue.get(timeout=0.5)
 
@@ -661,15 +661,11 @@ class xCLF:
                 self.CliEnts.settimeout(30)
                 data = self.CliEnts.recv(1024)
                 if len(data) == 0:
-                    # Server dong ket noi
-                    try:
-                        self.CliEnts.close()
-                    except:
-                        pass
+                    try: self.CliEnts.close()
+                    except: pass
                     self.CliEnts = None
                     self.update_status("connecting", "Socket1 disconnected, reconnecting...")
                     time.sleep(2)
-                    # Reconnect Socket1 trong vong lap hien tai, KHONG de quy
                     while True:
                         try:
                             self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
@@ -680,33 +676,30 @@ class xCLF:
                             break
                         except Exception as e:
                             err(f"[SOCK1:{self.id}] Reconnect failed: {e}")
-                            try:
-                                self.CliEnts.close()
-                            except:
-                                pass
+                            try: self.CliEnts.close()
+                            except: pass
                             self.CliEnts = None
                             time.sleep(3)
                 else:
                     self.retry_count = 0
+            except socket.timeout:
+                # Timeout la binh thuong (keep-alive check), KHONG reconnect, KHONG anh huong squad
+                continue
             except OSError as e:
-                # Errno 9 (Bad file descriptor) hoac loi socket khac
-                # Khong log lien tuc — chi log 1 lan roi sleep va reconnect
                 if self.CliEnts is not None:
                     err(f"[SOCK1:{self.id}] Socket error: {e}")
-                    try:
-                        self.CliEnts.close()
-                    except:
-                        pass
+                    try: self.CliEnts.close()
+                    except: pass
                     self.CliEnts = None
-                self.retry_count += 1
-                if self.retry_count >= self.max_retries:
-                    self.update_status("error", "Max retries — re-login")
-                    # Re-login hoan toan thay vi loop Errno 9 mai mai
-                    self._sock2_started = False
-                    threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
-                    return
+                # Chi re-login neu KHONG dang squad active
+                if not self._squad_active:
+                    self.retry_count += 1
+                    if self.retry_count >= self.max_retries:
+                        self.update_status("error", "Max retries — re-login")
+                        self._sock2_started = False
+                        threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
+                        return
                 time.sleep(3)
-                # Reconnect trong vong lap
                 try:
                     self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
                     self.CliEnts.send(bytes.fromhex(tok))
@@ -717,10 +710,8 @@ class xCLF:
                     err(f"[SOCK1:{self.id}] Reconnect error: {re}")
             except Exception as e:
                 err(f"[SOCK1:{self.id}] Unexpected error: {e}")
-                try:
-                    self.CliEnts.close()
-                except:
-                    pass
+                try: self.CliEnts.close()
+                except: pass
                 self.CliEnts = None
                 time.sleep(3)
 

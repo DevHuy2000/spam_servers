@@ -235,37 +235,56 @@ def xBunnEr():
 
 # ======== دوال مضافة من xC4.py ========
 
+def _get_field_data(d, key):
+    """Extract data từ field - handle cả dict có key 'data' lẫn value trực tiếp"""
+    if key not in d:
+        return None
+    val = d[key]
+    if isinstance(val, dict):
+        # Thử lấy 'data' trực tiếp
+        if 'data' in val:
+            return val['data']
+        # Nếu là nested dict (length_delimited), thử đệ quy lấy giá trị đầu tiên
+        for k in val:
+            if isinstance(val[k], dict) and 'data' in val[k]:
+                return val[k]['data']
+        return None
+    return val
+
 def GeTSQDaTa(dT):
     try:
-        # طباعة هيكل البيانات للتحقق
-        print(f"DEBUG GeTSQDaTa: Keys in dT: {list(dT.keys())}")
+        # Tìm data_field trong field '5' của packet
+        if '5' not in dT:
+            return None, None, None
         
-        if '5' in dT and 'data' in dT['5']:
-            data_field = dT['5']['data']
-            print(f"DEBUG GeTSQDaTa: Keys in data_field: {list(data_field.keys())}")
-            
-            # استخراج البيانات
-            OwNer_UiD = data_field.get('1', {}).get('data') if '1' in data_field else None
-            SQuAD_CoDe = data_field.get('31', {}).get('data') if '31' in data_field else None
-            ChaT_CoDe = data_field.get('17', {}).get('data') if '17' in data_field else None
-            
-            # إذا كان الحقل 17 غير موجود، جرب الحقل 14 (سيكر كود)
-            if not ChaT_CoDe and '14' in data_field:
-                ChaT_CoDe = data_field['14'].get('data')
-            
-            print(f"DEBUG GeTSQDaTa extracted:")
-            print(f"  Owner UID from field 1: {OwNer_UiD}")
-            print(f"  Squad Code from field 31: {SQuAD_CoDe}")
-            print(f"  Chat Code from field 17: {ChaT_CoDe}")
-            
-            return OwNer_UiD, SQuAD_CoDe, ChaT_CoDe
-        
-        return None, None, None
-        
+        field5 = dT['5']
+        if isinstance(field5, dict) and 'data' in field5:
+            data_field = field5['data']
+        elif isinstance(field5, dict):
+            data_field = field5
+        else:
+            return None, None, None
+
+        if not isinstance(data_field, dict):
+            return None, None, None
+
+        OwNer_UiD  = _get_field_data(data_field, '1')
+        SQuAD_CoDe = _get_field_data(data_field, '31')
+        ChaT_CoDe  = _get_field_data(data_field, '17')
+
+        # Fallback: thu field 14 neu field 17 khong co
+        if not ChaT_CoDe:
+            ChaT_CoDe = _get_field_data(data_field, '14')
+
+        # Chuyen sang string neu la int
+        if OwNer_UiD  is not None: OwNer_UiD  = str(OwNer_UiD)
+        if SQuAD_CoDe is not None: SQuAD_CoDe = str(SQuAD_CoDe)
+        if ChaT_CoDe  is not None: ChaT_CoDe  = str(ChaT_CoDe)
+
+        return OwNer_UiD, SQuAD_CoDe, ChaT_CoDe
+
     except Exception as e:
-        print(f"Error extracting squad data: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[GeTSQDaTa] Error: {e}")
         return None, None, None
 
 def OpenCh(idT, code, K, V):
