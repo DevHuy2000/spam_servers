@@ -451,6 +451,8 @@ class xCLF:
                                 except:
                                     pass
                                 self._squad_active = False
+                                # Cho server xu ly ExitSq truoc khi OpenCh duoc gui
+                                time.sleep(0.5)
                                 return {"success": True, "OwNer_UiD": OwNer,
                                         "SQuAD_CoDe": SQuAD, "ChaT_CoDe": ChaT}
                         except Exception:
@@ -947,6 +949,16 @@ def api_get_squad():
         first_client = list(connected_clients.values())[0]
     
     result = first_client.GeTinFoSqMsG(str(teamcode))
+    
+    # Cache lai de api_spam dung, tranh goi JoinSq lan 2
+    if result.get('success'):
+        session['squad_cache'] = {
+            'teamcode': teamcode,
+            'OwNer_UiD': result['OwNer_UiD'],
+            'ChaT_CoDe': result['ChaT_CoDe'],
+            'SQuAD_CoDe': result.get('SQuAD_CoDe', '')
+        }
+    
     return jsonify(result)
 
 @app.route('/api/spam', methods=['POST'])
@@ -973,13 +985,25 @@ def api_spam():
             return jsonify({'success': False, 'error': 'No connected clients'})
         first_client = list(connected_clients.values())[0]
     
-    # Get squad info
-    squad_info = first_client.GeTinFoSqMsG(str(teamcode))
-    if not squad_info.get('success'):
-        return jsonify({'success': False, 'error': squad_info.get('reason', 'Failed to get squad info')})
-    
-    owner_uid = squad_info.get('OwNer_UiD')
-    chat_code = squad_info.get('ChaT_CoDe')
+    # Dung cache tu api_get_squad, KHONG goi GeTinFoSqMsG lan 2
+    cache = session.get('squad_cache', {})
+    if cache.get('teamcode') == str(teamcode):
+        owner_uid = cache.get('OwNer_UiD')
+        chat_code = cache.get('ChaT_CoDe')
+        squad_info = {'success': True, **cache}
+    else:
+        # Fallback: goi lai neu teamcode khac hoac chua co cache
+        squad_info = first_client.GeTinFoSqMsG(str(teamcode))
+        if not squad_info.get('success'):
+            return jsonify({'success': False, 'error': squad_info.get('reason', 'Failed to get squad info')})
+        owner_uid = squad_info.get('OwNer_UiD')
+        chat_code = squad_info.get('ChaT_CoDe')
+        session['squad_cache'] = {
+            'teamcode': str(teamcode),
+            'OwNer_UiD': owner_uid,
+            'ChaT_CoDe': chat_code,
+            'SQuAD_CoDe': squad_info.get('SQuAD_CoDe', '')
+        }
     
     if not owner_uid or not chat_code:
         return jsonify({'success': False, 'error': 'Invalid squad data'})
