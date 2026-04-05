@@ -57,8 +57,8 @@ connected_clients = {}
 connected_clients_lock = threading.Lock()
 
 # Admin configuration
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "admin123"  # Change this!
+ADMIN_USERNAME = "senzu"
+ADMIN_PASSWORD = "123"  # Change this!
 
 # Session management
 sessions = {}
