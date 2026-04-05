@@ -472,25 +472,38 @@ class xCLF:
             return {"success": False, "reason": str(e)}
 
     def _chat_worker(self, client, owner_uid, chat_code, message, count, progress_callback=None):
-        info(f"[CHAT:{client.id}] Bắt đầu spam chat → owner={owner_uid} count={count}")
+        # Doi socket1 san sang toi da 10s
+        for _ in range(20):
+            if client.CliEnts is not None:
+                break
+            time.sleep(0.5)
+        if client.CliEnts is None:
+            err(f"[CHAT:{client.id}] CliEnts=None, bo qua")
+            return
         try:
             client.CliEnts.send(OpenCh(owner_uid, chat_code, client.key, client.iv))
             time.sleep(1)
             for i in range(count):
+                if client.CliEnts is None:
+                    break
                 client.CliEnts.send(
                     MsqSq(f'[b][c]{generate_random_color()}{message}', owner_uid, client.key, client.iv))
                 if progress_callback:
                     progress_callback(i + 1, count, "chat")
                 time.sleep(0.5)
-            info(f"[CHAT:{client.id}] ✅ Spam chat xong {count} tin")
         except Exception as e:
             err(f"[CHAT:{client.id}] _chat_worker lỗi: {e}")
 
     def _room_worker(self, client, owner_uid, count, progress_callback=None):
-        info(f"[ROOM:{client.id}] Bắt đầu spam room → uid={owner_uid} count={count}")
+        # Doi socket2 san sang toi da 10s
+        for _ in range(20):
+            if client.CliEnts2 is not None:
+                break
+            time.sleep(0.5)
+        if client.CliEnts2 is None:
+            err(f"[ROOM:{client.id}] CliEnts2=None, bo qua")
+            return
         try:
-            if not client.CliEnts2:
-                return
             k = client.key if isinstance(client.key, bytes) else bytes.fromhex(client.key)
             iv = client.iv if isinstance(client.iv, bytes) else bytes.fromhex(client.iv)
             room_pkt = _openRoom(k, iv)
@@ -498,22 +511,28 @@ class xCLF:
             client.CliEnts2.send(room_pkt)
             time.sleep(0.3)
             for i in range(count):
+                if client.CliEnts2 is None:
+                    break
                 client.CliEnts2.send(spm_pkt)
                 if progress_callback:
                     progress_callback(i + 1, count, "room")
                 time.sleep(0.05)
-            info(f"[ROOM:{client.id}] ✅ Spam room xong {count} lần")
         except Exception as e:
             err(f"[ROOM:{client.id}] _room_worker lỗi: {e}")
 
     def SeNd_SpaM_MsG(self, owner_uid, chat_code, message, count=50, progress_callback=None):
         try:
             with connected_clients_lock:
-                clients = list(connected_clients.values())[:3]
-            
+                # Chi lay client da co key/iv san sang
+                clients = [
+                    c for c in list(connected_clients.values())[:3]
+                    if c.key and c.iv and c.status == "connected"
+                ]
+
             if not clients:
+                err("[SPAM] Khong co client nao san sang (key/iv/status)")
                 return False
-            
+
             threads = []
             for c in clients:
                 t1 = threading.Thread(
@@ -524,12 +543,12 @@ class xCLF:
                     args=(c, owner_uid, count, progress_callback), daemon=True)
                 threads.append(t1)
                 threads.append(t2)
-            
+
             for t in threads:
                 t.start()
             for t in threads:
                 t.join(timeout=60)
-            
+
             return True
         except Exception as e:
             err(f"[SPAM] Error: {e}")
@@ -843,8 +862,6 @@ class xCLF:
 # ==================== SPAM ACCOUNTS ====================
 SPAM_ACCOUNTS = [
     {'id': '4691534392', 'password': 'Senzu_999AA76C'},
-    {'id': '4691534385', 'password': 'Senzu_999PWV20'},
-    {'id': '4691534391', 'password': 'Senzu_999MMHME'}
 ]
 
 def start_spam_server():
