@@ -774,26 +774,22 @@ def chat_with_gemini(prompt):
     """Simple Gemini chat using direct requests"""
     try:
         # Using a free Gemini API endpoint (you can replace with your own)
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
-        
-        # Note: You need an API key for this to work
-        # For demo, return a simulated response
-        # To enable real Gemini, set GEMINI_API_KEY environment variable
         api_key = os.environ.get("GEMINI_API_KEY", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         if api_key:
             headers = {"Content-Type": "application/json"}
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 800}
+                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000}
             }
-            resp = requests.post(f"{url}?key={api_key}", json=payload, headers=headers, timeout=30)
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
                 if "candidates" in data and len(data["candidates"]) > 0:
                     text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    return {"success": True, "response": text, "metadata": {"model": "gemini-pro"}}
-            return {"success": False, "error": f"API error: {resp.status_code}"}
+                    return {"success": True, "response": text, "metadata": {"model": "gemini-2.5-flash"}}
+            return {"success": False, "error": f"API error: {resp.status_code} - {resp.text[:200]}"}
         else:
             # Simulated response when no API key
             return {
