@@ -781,7 +781,7 @@ def chat_with_gemini(prompt):
             headers = {"Content-Type": "application/json"}
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000}
+                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 8192}
             }
             resp = requests.post(url, json=payload, headers=headers, timeout=30)
             if resp.status_code == 200:
@@ -835,14 +835,37 @@ def tiktok_buff_views(link):
         return {'success': False, 'error': str(e)}
 
 # ==================== SPAM ACCOUNTS ====================
-SPAM_ACCOUNTS = [
-    {'id': '4691534392', 'password': 'Senzu_999AA76C'},
-]
+ACC_FILE = os.path.join(os.path.dirname(__file__), "acc-VN.json")
+
+def load_accounts(filepath=ACC_FILE):
+    """Load danh sách account từ file JSON bên ngoài"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        accounts = [
+            {'id': str(acc['uid']), 'password': acc['password']}
+            for acc in data
+            if 'uid' in acc and 'password' in acc
+        ]
+        info(f"[ACCOUNTS] Loaded {len(accounts)} accounts from {filepath}")
+        return accounts
+    except FileNotFoundError:
+        err(f"[ACCOUNTS] File not found: {filepath}")
+        return []
+    except Exception as e:
+        err(f"[ACCOUNTS] Load error: {e}")
+        return []
+
+SPAM_ACCOUNTS = load_accounts()
 
 def start_spam_server():
     time.sleep(2)
-    info(f"[SERVER] Starting {len(SPAM_ACCOUNTS)} spam accounts")
-    for acc in SPAM_ACCOUNTS:
+    accounts = load_accounts()
+    if not accounts:
+        err("[SERVER] No accounts loaded")
+        return
+    info(f"[SERVER] Starting {len(accounts)} spam accounts")
+    for acc in accounts:
         try:
             xCLF(acc['id'], acc['password'])
         except Exception as e:
