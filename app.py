@@ -28,14 +28,18 @@ import Xr
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==================== LOGGING SETUP ====================
-LOG_FILE = "web_debug.log"
+LOG_FILE = "/tmp/web_debug.log"
+# File handler: DEBUG level (full logs)
+file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+file_handler.setLevel(logging.DEBUG)
+# Stream handler: WARNING only (giảm log spam trên Railway)
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.WARNING)
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[file_handler, stream_handler]
 )
 logger = logging.getLogger("FF_WEB")
 
@@ -57,8 +61,8 @@ connected_clients = {}
 connected_clients_lock = threading.Lock()
 
 # Admin configuration
-ADMIN_USERNAME = "senzu"
-ADMIN_PASSWORD = "123"  # Change this!
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin123"  # Change this!
 
 # Session management
 sessions = {}
@@ -152,9 +156,14 @@ class xCLF:
         threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
 
     def update_status(self, status, message=""):
-        self.status = status
-        self.status_message = message
-        info(f"[STATUS:{self.id}] {status} - {message}")
+        # Only log if status actually changed to avoid log spam
+        if self.status != status or self.status_message != message:
+            self.status = status
+            self.status_message = message
+            info(f"[STATUS:{self.id}] {status} - {message}")
+        else:
+            self.status = status
+            self.status_message = message
 
     def GeTinFoSqMsG(self, teamcode):
         info(f"[SQUAD:{self.id}] Bắt đầu GeTinFoSqMsG teamcode={teamcode}")
@@ -311,6 +320,7 @@ class xCLF:
                 self.CliEnts2 = socket.create_connection((host2, int(port2)))
                 self.CliEnts2.send(bytes.fromhex(tok))
                 self.update_status("connected", "Socket2 connected")
+                info(f"[SOCK2:{self.id}] Connected to {host2}:{port2}")
                 while True:
                     try:
                         self.CliEnts2.settimeout(1.0)
@@ -324,6 +334,8 @@ class xCLF:
                     except Exception as e:
                         err(f"[SOCK2:{self.id}] recv lỗi: {e}")
                         break
+                # Socket disconnected, will reconnect
+                self.update_status("connecting", "Socket2 disconnected, reconnecting...")
             except Exception as e:
                 err(f"[SOCK2:{self.id}] Kết nối thất bại: {e}")
                 self.update_status("error", f"Socket2 error: {e}")
