@@ -223,10 +223,10 @@
             <div class="tab" data-tab="account">👤 Account Tools</div>
             <div class="tab" data-tab="tiktok">📱 TikTok Views</div>
             <div class="tab" data-tab="ai">🤖 AI Chat</div>
-            <div class="tab" data-tab="clients">📡 Connected Clients</div>
+            <div class="tab" data-tab="clients">📡 Clients</div>
         </div>
         
-        <!-- Tab 1: Spam Tool -->
+        <!-- Tab Spam -->
         <div id="tab-spam" class="tab-content active">
             <div class="card">
                 <div class="card-header">🎯 Spam Tool</div>
@@ -234,7 +234,7 @@
                     <div class="form-group"><label>Team Code</label><input type="text" id="teamcode" placeholder="Enter team code..."></div>
                     <div class="form-group"><label>Message</label><textarea id="message" rows="3" placeholder="Enter spam message..."></textarea></div>
                     <div class="form-row">
-                        <div class="form-group" style="margin-bottom:0;"><label>Spam Count (max 100)</label><input type="number" id="count" value="50" min="1" max="100"></div>
+                        <div class="form-group" style="margin-bottom:0;"><label>Spam Count</label><input type="number" id="count" value="50" min="1" max="100"></div>
                         <button id="getSquadBtn" class="btn-secondary">Get Squad Info</button>
                     </div>
                     <div id="squadInfo" class="squad-info" style="display:none;"></div>
@@ -247,17 +247,17 @@
             </div>
         </div>
         
-        <!-- Tab 2: Account Tools (Recovery Email + Linked Platforms + Ban Account) -->
+        <!-- Tab Account Tools -->
         <div id="tab-account" class="tab-content">
             <div class="sub-tabs">
                 <div class="sub-tab active" data-subtab="recovery">📧 Recovery Email</div>
                 <div class="sub-tab" data-subtab="linked">🔗 Linked Platforms</div>
                 <div class="sub-tab" data-subtab="ban">⚠️ Ban Account</div>
             </div>
-
+            
             <div id="subtab-recovery" class="sub-tab-content active">
                 <div class="card">
-                    <div class="card-header">📧 Recovery Email Manager</div>
+                    <div class="card-header">📧 Recovery Email</div>
                     <div class="card-body">
                         <div class="form-group"><label>Access Token</label><input type="text" id="recToken" placeholder="Enter access token..."></div>
                         <div class="form-group"><label>Email</label><input type="email" id="recEmail" placeholder="Enter email..."></div>
@@ -274,61 +274,55 @@
                     </div>
                 </div>
             </div>
-
+            
             <div id="subtab-linked" class="sub-tab-content">
                 <div class="card">
                     <div class="card-header">🔗 Linked Platforms</div>
                     <div class="card-body">
                         <div class="form-group"><label>Access Token</label><input type="text" id="linkedToken" placeholder="Enter access token..."></div>
                         <button id="getLinkedBtn" style="width:100%;">Get Linked Platforms</button>
-                        <div id="linkedResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                        <div id="linkedResult" class="result-box" style="display:none;"></div>
                     </div>
                 </div>
             </div>
-
+            
             <div id="subtab-ban" class="sub-tab-content">
                 <div class="card">
                     <div class="card-header">⚠️ Ban Account</div>
                     <div class="card-body">
                         <div class="form-group"><label>Access Token</label><input type="text" id="banToken" placeholder="Enter access token..."></div>
                         <button id="banAccountBtn" style="width:100%; background: linear-gradient(135deg, #ff6b6b, #ff4444);">Ban Account</button>
-                        <div id="banResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                        <div id="banResult" class="result-box" style="display:none;"></div>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- Tab 3: TikTok Views -->
+        <!-- Tab TikTok -->
         <div id="tab-tiktok" class="tab-content">
             <div class="card">
                 <div class="card-header">📱 TikTok Buff Views</div>
                 <div class="card-body">
-                    <div class="form-group">
-                        <label>Link Video TikTok</label>
-                        <input type="text" id="tiktokLink" placeholder="https://www.tiktok.com/@user/video/...">
-                    </div>
+                    <div class="form-group"><label>Link Video</label><input type="text" id="tiktokLink" placeholder="https://www.tiktok.com/@user/video/..."></div>
                     <button id="buffViewsBtn" style="width:100%;">🚀 Buff Views</button>
-                    <div id="tiktokResult" class="result-box" style="display:none; margin-top:15px;"></div>
+                    <div id="tiktokResult" class="result-box" style="display:none;"></div>
                 </div>
             </div>
         </div>
-
-        <!-- Tab 4: AI Chat -->
+        
+        <!-- Tab AI Chat -->
         <div id="tab-ai" class="tab-content">
             <div class="card">
                 <div class="card-header">🤖 AI Chat (Gemini)</div>
                 <div class="card-body">
-                    <div class="form-group">
-                        <label>Nhập câu hỏi</label>
-                        <textarea id="aiPrompt" rows="4" placeholder="Nhập câu hỏi cho Gemini AI..."></textarea>
-                    </div>
+                    <div class="form-group"><label>Câu hỏi</label><textarea id="aiPrompt" rows="4" placeholder="Nhập câu hỏi..."></textarea></div>
                     <button id="aiAskBtn" style="width:100%;">🚀 Gửi</button>
-                    <div id="aiResult" class="result-box" style="display:none; margin-top:15px; white-space:pre-wrap; line-height:1.6;"></div>
+                    <div id="aiResult" class="result-box" style="display:none; white-space:pre-wrap;"></div>
                 </div>
             </div>
         </div>
-
-        <!-- Tab 5: Connected Clients -->
+        
+        <!-- Tab Clients -->
         <div id="tab-clients" class="tab-content">
             <div class="card">
                 <div class="card-header">📡 Connected Clients</div>
@@ -351,24 +345,27 @@
             setTimeout(() => alert.remove(), 5000);
         }
         
+        // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
-                var el = document.getElementById('tab-' + tab.dataset.tab); if(el) el.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
             });
         });
-
+        
+        // Sub-tab switching
         document.querySelectorAll('.sub-tab').forEach(stab => {
             stab.addEventListener('click', () => {
                 document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
                 stab.classList.add('active');
-                document.getElementById(`subtab-${stab.dataset.subtab}`).classList.add('active');
+                document.getElementById('subtab-' + stab.dataset.subtab).classList.add('active');
             });
         });
         
+        // Load status
         async function loadStatus() {
             try {
                 const response = await fetch('/api/status');
@@ -390,24 +387,34 @@
             } catch(e) { console.error(e); }
         }
         
+        // Get Squad Info
         async function getSquadInfo() {
             const teamcode = document.getElementById('teamcode').value.trim();
             if (!teamcode) { showAlert('Enter team code', 'error'); return; }
             const btn = document.getElementById('getSquadBtn');
             btn.disabled = true; btn.textContent = 'Loading...';
             try {
-                const response = await fetch('/api/get_squad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamcode }) });
+                const response = await fetch('/api/get_squad', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teamcode })
+                });
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('squadInfo').style.display = 'block';
-                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4><p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p><p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>`;
+                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4>
+                        <p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p>
+                        <p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>`;
                     document.getElementById('spamBtn').disabled = false;
                     showAlert('Squad info retrieved!', 'success');
-                } else { showAlert(`Failed: ${data.reason || data.error}`, 'error'); }
+                } else {
+                    showAlert(`Failed: ${data.reason || data.error}`, 'error');
+                }
             } catch(e) { showAlert('Failed to get squad info', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Get Squad Info'; }
         }
         
+        // Start Spam
         async function startSpam() {
             const teamcode = document.getElementById('teamcode').value.trim();
             const message = document.getElementById('message').value.trim();
@@ -420,7 +427,11 @@
             document.getElementById('progressFill').style.width = '0%';
             document.getElementById('progressText').textContent = 'Starting spam...';
             try {
-                const response = await fetch('/api/spam', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamcode, message, count }) });
+                const response = await fetch('/api/spam', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teamcode, message, count })
+                });
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('progressFill').style.width = '100%';
@@ -437,19 +448,27 @@
             }
         }
         
+        // Recovery functions
         async function getRecoveryInfo() {
             const token = document.getElementById('recToken').value.trim();
             if (!token) { showAlert('Enter access token', 'error'); return; }
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Loading...';
             try {
-                const response = await fetch('/api/recovery/get_info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const response = await fetch('/api/recovery/get_info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: token })
+                });
                 const data = await response.json();
                 const infoDiv = document.getElementById('recoveryInfo');
                 if (data.success) {
                     infoDiv.style.display = 'block';
                     infoDiv.innerHTML = `<h4>📋 Recovery Info</h4><p>${data.status}</p>`;
-                } else { infoDiv.style.display = 'block'; infoDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`; }
+                } else {
+                    infoDiv.style.display = 'block';
+                    infoDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`;
+                }
             } catch(e) { showAlert('Failed to get info', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Get Recovery Info'; }
         }
@@ -461,9 +480,13 @@
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Sending...';
             try {
-                const response = await fetch('/api/recovery/send_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, access_token: token }) });
+                const response = await fetch('/api/recovery/send_otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, access_token: token })
+                });
                 const data = await response.json();
-                if (data.success) showAlert('OTP sent! Check your email.', 'success');
+                if (data.success) showAlert('OTP sent!', 'success');
                 else showAlert(`Failed: ${data.error}`, 'error');
             } catch(e) { showAlert('Failed to send OTP', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Send OTP'; }
@@ -477,7 +500,11 @@
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Verifying...';
             try {
-                const response = await fetch('/api/recovery/verify_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp, email, access_token: token }) });
+                const response = await fetch('/api/recovery/verify_otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp, email, access_token: token })
+                });
                 const data = await response.json();
                 const resultDiv = document.getElementById('verifierResult');
                 if (data.success) {
@@ -488,7 +515,7 @@
                     showAlert('OTP verified!', 'success');
                 } else {
                     resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = `<h4>❌ Verification Failed</h4><p>${data.error}</p>`;
+                    resultDiv.innerHTML = `<h4>❌ Failed</h4><p>${data.error}</p>`;
                 }
             } catch(e) { showAlert('Failed to verify OTP', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Verify OTP'; }
@@ -501,10 +528,19 @@
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Processing...';
             try {
-                const response = await fetch('/api/recovery/create_bind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verifier_token: verifierToken, access_token: token, email }) });
+                const response = await fetch('/api/recovery/create_bind', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ verifier_token: verifierToken, access_token: token, email })
+                });
                 const data = await response.json();
-                if (data.success) { showAlert(data.message, 'success'); verifierToken = null; document.getElementById('createBindBtn').disabled = true; }
-                else showAlert(`Failed: ${data.error}`, 'error');
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    verifierToken = null;
+                    document.getElementById('createBindBtn').disabled = true;
+                } else {
+                    showAlert(`Failed: ${data.error}`, 'error');
+                }
             } catch(e) { showAlert('Failed to create bind', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Create Bind Request'; }
         }
@@ -515,7 +551,11 @@
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Cancelling...';
             try {
-                const response = await fetch('/api/recovery/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const response = await fetch('/api/recovery/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: token })
+                });
                 const data = await response.json();
                 if (data.success) showAlert('Request cancelled', 'success');
                 else showAlert(`Failed: ${data.error}`, 'error');
@@ -523,28 +563,41 @@
             finally { btn.disabled = false; btn.textContent = 'Cancel Request'; }
         }
         
+        // Linked Platforms
         async function getLinkedPlatforms() {
             const token = document.getElementById('linkedToken').value.trim();
             if (!token) { showAlert('Enter access token', 'error'); return; }
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Loading...';
             try {
-                const response = await fetch('/api/account/linked_platforms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const response = await fetch('/api/account/linked_platforms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: token })
+                });
                 const data = await response.json();
                 const resultDiv = document.getElementById('linkedResult');
                 if (data.success) {
                     let html = `<h4>🔗 Linked Platforms</h4><p><strong>Main Platform:</strong> ${data.main_platform || 'N/A'}</p>`;
                     if (data.platforms.length > 0) {
                         html += '<p><strong>Linked Accounts:</strong></p>';
-                        data.platforms.forEach(p => { html += `<p>• ${p.platform}: ${p.email || p.nickname || 'N/A'}</p>`; });
-                    } else html += '<p>No linked platforms found.</p>';
+                        data.platforms.forEach(p => {
+                            html += `<p>• ${p.platform}: ${p.email || p.nickname || 'N/A'}</p>`;
+                        });
+                    } else {
+                        html += '<p>No linked platforms found.</p>';
+                    }
                     resultDiv.style.display = 'block';
                     resultDiv.innerHTML = html;
-                } else { resultDiv.style.display = 'block'; resultDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`; }
+                } else {
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`;
+                }
             } catch(e) { showAlert('Failed to get platforms', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Get Linked Platforms'; }
         }
         
+        // Ban Account
         async function banAccount() {
             const token = document.getElementById('banToken').value.trim();
             if (!token) { showAlert('Enter access token', 'error'); return; }
@@ -552,28 +605,26 @@
             const btn = event.target;
             btn.disabled = true; btn.textContent = 'Processing...';
             try {
-                const response = await fetch('/api/account/ban', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
+                const response = await fetch('/api/account/ban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: token })
+                });
                 const data = await response.json();
                 const resultDiv = document.getElementById('banResult');
                 if (data.success) {
                     resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = `<h4>⚠️ Ban Request Sent</h4><p>Account ID: ${data.account_id}<br>Platform: ${data.platform}</p>`;
+                    resultDiv.innerHTML = `<h4>⚠️ Ban Request Sent</h4><p>Account ID: ${data.account_id}</p>`;
                     showAlert('Ban request sent!', 'success');
-                } else { resultDiv.style.display = 'block'; resultDiv.innerHTML = `<h4>❌ Failed</h4><p>${data.error}</p>`; }
+                } else {
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<h4>❌ Failed</h4><p>${data.error}</p>`;
+                }
             } catch(e) { showAlert('Failed to process ban', 'error'); }
             finally { btn.disabled = false; btn.textContent = 'Ban Account'; }
         }
         
-        document.getElementById('getSquadBtn').addEventListener('click', getSquadInfo);
-        document.getElementById('spamBtn').addEventListener('click', startSpam);
-        document.getElementById('getRecoveryInfoBtn').addEventListener('click', getRecoveryInfo);
-        document.getElementById('sendOtpBtn').addEventListener('click', sendOtp);
-        document.getElementById('verifyOtpBtn').addEventListener('click', verifyOtp);
-        document.getElementById('createBindBtn').addEventListener('click', createBind);
-        document.getElementById('cancelRecoveryBtn').addEventListener('click', cancelRecovery);
-        document.getElementById('getLinkedBtn').addEventListener('click', getLinkedPlatforms);
-        document.getElementById('banAccountBtn').addEventListener('click', banAccount);
-
+        // TikTok Buff Views
         async function buffViews() {
             const link = document.getElementById('tiktokLink').value.trim();
             if (!link) { showAlert('Nhập link TikTok', 'error'); return; }
@@ -583,54 +634,67 @@
             resultDiv.style.display = 'block';
             resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.6);">⏳ Đang gửi request...</p>';
             try {
-                const resp = await fetch('/api/tiktok/buff_views', {
+                const response = await fetch('/api/tiktok/buff_views', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({link})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ link })
                 });
-                const data = await resp.json();
+                const data = await response.json();
                 if (data.success) {
-                    resultDiv.innerHTML = `<h4>✅ Thành công!</h4><p>Thời gian: ${data.elapsed}s</p><p>Response: <code>${JSON.stringify(data.response)}</code></p>`;
+                    resultDiv.innerHTML = `<h4>✅ Thành công!</h4><p>Thời gian: ${data.elapsed}s</p>`;
                     showAlert('Buff views thành công!', 'success');
                 } else {
-                    resultDiv.innerHTML = `<h4>❌ Thất bại</h4><p>${data.error || 'Unknown error'}</p>`;
+                    resultDiv.innerHTML = `<h4>❌ Thất bại</h4><p>${data.error}</p>`;
                 }
             } catch(e) {
-                resultDiv.innerHTML = `<h4>❌ Lỗi kết nối</h4><p>${e.message}</p>`;
+                resultDiv.innerHTML = `<h4>❌ Lỗi</h4><p>${e.message}</p>`;
             }
-            btn.disabled = false; btn.textContent = '🚀 Buff Views';
+            finally { btn.disabled = false; btn.textContent = '🚀 Buff Views'; }
         }
-        document.getElementById('buffViewsBtn').addEventListener('click', buffViews);
-
+        
+        // AI Chat
         async function askAI() {
-            var prompt = document.getElementById('aiPrompt').value.trim();
-            if (!prompt) { showAlert('Nhập câu hỏi trước', 'error'); return; }
-            var btn = document.getElementById('aiAskBtn');
-            var resultDiv = document.getElementById('aiResult');
+            const prompt = document.getElementById('aiPrompt').value.trim();
+            if (!prompt) { showAlert('Nhập câu hỏi', 'error'); return; }
+            const btn = document.getElementById('aiAskBtn');
+            const resultDiv = document.getElementById('aiResult');
             btn.disabled = true; btn.textContent = 'Đang gửi...';
             resultDiv.style.display = 'block';
-            resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.5);">⏳ Đang chờ Gemini trả lời...</p>';
+            resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.5);">⏳ Đang chờ trả lời...</p>';
             try {
-                var resp = await fetch('/api/ai/ask', {
+                const response = await fetch('/api/ai/ask', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({prompt: prompt})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
                 });
-                var data = await resp.json();
+                const data = await response.json();
                 if (data.success) {
-                    var rt = (data.metadata && data.metadata.response_time) ? data.metadata.response_time : '';
-                    var txt = data.response.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-                    resultDiv.innerHTML = '<h4 style="color:#4ecdc4;">✅ Gemini ' + rt + '</h4><p style="margin-top:8px;">' + txt + '</p>';
+                    const rt = data.metadata?.response_time || '';
+                    const txt = data.response.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+                    resultDiv.innerHTML = `<h4 style="color:#4ecdc4;">✅ Gemini ${rt}</h4><p style="margin-top:8px;">${txt}</p>`;
                 } else {
-                    resultDiv.innerHTML = '<h4 style="color:#ff6b6b;">❌ Lỗi: ' + (data.error || 'Unknown') + '</h4>';
+                    resultDiv.innerHTML = `<h4 style="color:#ff6b6b;">❌ Lỗi: ${data.error}</h4>`;
                 }
             } catch(e) {
-                resultDiv.innerHTML = '<h4 style="color:#ff6b6b;">❌ Lỗi kết nối: ' + e.message + '</h4>';
+                resultDiv.innerHTML = `<h4 style="color:#ff6b6b;">❌ Lỗi: ${e.message}</h4>`;
             }
-            btn.disabled = false; btn.textContent = '🚀 Gửi';
+            finally { btn.disabled = false; btn.textContent = '🚀 Gửi'; }
         }
+        
+        // Event listeners
+        document.getElementById('getSquadBtn').addEventListener('click', getSquadInfo);
+        document.getElementById('spamBtn').addEventListener('click', startSpam);
+        document.getElementById('getRecoveryInfoBtn').addEventListener('click', getRecoveryInfo);
+        document.getElementById('sendOtpBtn').addEventListener('click', sendOtp);
+        document.getElementById('verifyOtpBtn').addEventListener('click', verifyOtp);
+        document.getElementById('createBindBtn').addEventListener('click', createBind);
+        document.getElementById('cancelRecoveryBtn').addEventListener('click', cancelRecovery);
+        document.getElementById('getLinkedBtn').addEventListener('click', getLinkedPlatforms);
+        document.getElementById('banAccountBtn').addEventListener('click', banAccount);
+        document.getElementById('buffViewsBtn').addEventListener('click', buffViews);
         document.getElementById('aiAskBtn').addEventListener('click', askAI);
         
+        // Initial load
         loadStatus();
         setInterval(loadStatus, 10000);
     </script>
