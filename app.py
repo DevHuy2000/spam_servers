@@ -661,23 +661,32 @@ class xCLF:
             resp = requests.post(
                 'https://clientbp.ggpolarbear.com/GetLoginData',
                 headers={
+                    'Expect': '100-continue',
                     'Authorization': f'Bearer {JwT_ToKen}',
                     'X-Unity-Version': '2022.3.47f1',
+                    'X-GA': 'v1 1',
                     'ReleaseVersion': freefire_version,
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+                    'Host': 'clientbp.ggpolarbear.com',
+                    'Connection': 'close',
+                    'Accept-Encoding': 'gzip',
                 },
                 data=PayLoad,
                 timeout=30,
                 verify=False
             )
             if resp.status_code != 200:
+                err(f"[LOGIN:{self.id}] DataLogin HTTP {resp.status_code}: {resp.text[:200]}")
                 return None, None, None, None
             decoded = DeCode_PackEt(resp.content.hex())
             if not decoded:
+                err(f"[LOGIN:{self.id}] DataLogin decode failed, raw: {resp.content.hex()[:100]}")
                 return None, None, None, None
             d = json.loads(decoded)
+            info(f"[LOGIN:{self.id}] DataLogin keys: {list(d.keys())}")
             if '32' not in d or '14' not in d:
+                err(f"[LOGIN:{self.id}] DataLogin missing keys, got: {list(d.keys())}, data: {str(d)[:300]}")
                 return None, None, None, None
             addr = d['32']['data']
             addr2 = d['14']['data']
@@ -713,12 +722,16 @@ class xCLF:
                     'X-GA': 'v1 1',
                     'Content-Length': str(len(self.PaYload)),
                     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+                    'Host': 'loginbp.ggpolarbear.com',
+                    'Connection': 'Keep-Alive',
+                    'Accept-Encoding': 'gzip',
                 },
                 data=self.PaYload,
                 timeout=30,
                 verify=False
             )
             if resp.status_code != 200 or len(resp.text) < 10:
+                err(f"[LOGIN:{self.id}] MajorLogin HTTP {resp.status_code}: {resp.text[:200]}")
                 self.update_status("error", f"Major login failed: HTTP {resp.status_code}")
                 return None
 
