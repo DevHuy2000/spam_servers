@@ -39,31 +39,45 @@ except ImportError as e:
     print("Make sure Xr.py is in the same directory")
     sys.exit(1)
 
-# ==================== LOGGING SETUP (RAILWAY OPTIMIZED) ====================
-# Railway gioi han log stdout -> chi in ERROR ra stdout, tat Werkzeug access log
+# ==================== LOGGING SETUP ====================
+# DEV=1  -> full DEBUG log (Termux / local test)
+# DEV=0  -> chi in ERROR (Railway, tranh spam log)
+_DEV_MODE = os.environ.get("DEV", "0") == "1"
 
-# Tat Werkzeug request log (moi HTTP request se khong spam stdout)
-logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
-# Tat cac logger khong can thiet
-for _noisy in ("urllib3", "requests", "charset_normalizer"):
-    logging.getLogger(_noisy).setLevel(logging.CRITICAL)
-
-# Chi ERROR tro len moi ra stdout
-_stream_handler = logging.StreamHandler(sys.stdout)
-_stream_handler.setLevel(logging.ERROR)
-_stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-
-logging.basicConfig(level=logging.WARNING, handlers=[_stream_handler])
+if _DEV_MODE:
+    # Termux: hien thi tat ca log DEBUG tro len
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    logging.getLogger("werkzeug").setLevel(logging.INFO)
+    for _noisy in ("urllib3", "requests", "charset_normalizer"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+else:
+    # Railway: tat het, chi in ERROR
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    for _noisy in ("urllib3", "requests", "charset_normalizer"):
+        logging.getLogger(_noisy).setLevel(logging.CRITICAL)
+    _stream_handler = logging.StreamHandler(sys.stdout)
+    _stream_handler.setLevel(logging.ERROR)
+    _stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+    logging.basicConfig(level=logging.WARNING, handlers=[_stream_handler])
 
 logger = logging.getLogger("FF_WEB")
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.DEBUG if _DEV_MODE else logging.WARNING)
 
-# info/dbg = silent tren Railway; chi err() moi in ra stdout
-def dbg(msg): pass
-def info(msg): pass
-def warn(msg): logger.warning(msg)
-def err(msg): logger.error(msg)
+if _DEV_MODE:
+    def dbg(msg):  logger.debug(msg)
+    def info(msg): logger.info(msg)
+    def warn(msg): logger.warning(msg)
+    def err(msg):  logger.error(msg)
+    print("[DEV MODE] Full logging enabled", flush=True)
+else:
+    def dbg(msg):  pass
+    def info(msg): pass
+    def warn(msg): logger.warning(msg)
+    def err(msg):  logger.error(msg)
 
 # ==================== FLASK CONFIG ====================
 app = Flask(__name__)
@@ -378,6 +392,7 @@ class xCLF:
     def update_status(self, status, message=""):
         self.status = status
         self.status_message = message
+        info(f"[STATUS:{self.id}] {status} - {message}")
 
     def GeTinFoSqMsG(self, teamcode):
         try:
@@ -445,14 +460,16 @@ class xCLF:
                                 continue
 
                             OwNer, SQuAD, ChaT = GeTSQDaTa(dT)
-                            if OwNer and ChaT:
+                            info(f"[SQUAD:{self.id}] parsed O={OwNer} S={SQuAD} C={ChaT}")
+                            # FIX: phai co du ca 3 truong, neu thieu SQuAD thi doi packet ke tiep
+                            if OwNer and ChaT and SQuAD:
                                 try:
                                     self.CliEnts2.send(ExitSq('000000', self.key, self.iv))
                                 except:
                                     pass
-                                self._squad_active = False
-                                # Cho server xu ly ExitSq truoc khi OpenCh duoc gui
+                                # FIX: sleep truoc, set False sau de tranh race condition
                                 time.sleep(0.5)
+                                self._squad_active = False
                                 return {"success": True, "OwNer_UiD": OwNer,
                                         "SQuAD_CoDe": SQuAD, "ChaT_CoDe": ChaT}
                         except Exception:
@@ -525,10 +542,10 @@ class xCLF:
     def SeNd_SpaM_MsG(self, owner_uid, chat_code, message, count=50, progress_callback=None):
         try:
             with connected_clients_lock:
-                # Chi lay client da co key/iv san sang
+                # Chi lay client da co key/iv (bo status check de tranh miss client)
                 clients = [
                     c for c in list(connected_clients.values())[:3]
-                    if c.key and c.iv and c.status == "connected"
+                    if c.key and c.iv
                 ]
 
             if not clients:
@@ -1811,18 +1828,21 @@ def create_templates():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     create_templates()
-    print("[FF_BOT] Starting...", flush=True)
-    
+    port = int(os.environ.get("PORT", 5000))
+    print(f"[FF_BOT] Starting... Web: http://localhost:{port}", flush=True)
+
     # Start spam server in background
     spam_thread = threading.Thread(target=start_spam_server, daemon=True)
     spam_thread.start()
-    
-    # Run Flask - dung Werkzeug voi log tat hoat toan
-    try:
+
+    # Chi disable werkzeug khi KHONG phai DEV mode
+    if not _DEV_MODE:
         import logging as _log
         _log.getLogger("werkzeug").disabled = True
         app.logger.disabled = True
-        app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)),
+
+    try:
+        app.run(host='0.0.0.0', port=port,
                 debug=False, threaded=True, use_reloader=False)
     except Exception as e:
         err(f"Failed to start server: {e}")
