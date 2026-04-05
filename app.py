@@ -835,37 +835,15 @@ def tiktok_buff_views(link):
         return {'success': False, 'error': str(e)}
 
 # ==================== SPAM ACCOUNTS ====================
-ACC_FILE = os.path.join(os.path.dirname(__file__), "acc-VN.json")
-
-def load_accounts(filepath=ACC_FILE):
-    """Load danh sách account từ file JSON bên ngoài"""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        accounts = [
-            {'id': str(acc['uid']), 'password': acc['password']}
-            for acc in data
-            if 'uid' in acc and 'password' in acc
-        ]
-        info(f"[ACCOUNTS] Loaded {len(accounts)} accounts from {filepath}")
-        return accounts
-    except FileNotFoundError:
-        err(f"[ACCOUNTS] File not found: {filepath}")
-        return []
-    except Exception as e:
-        err(f"[ACCOUNTS] Load error: {e}")
-        return []
-
-SPAM_ACCOUNTS = load_accounts()
+SPAM_ACCOUNTS = [
+    {'id': '4691534392', 'password': 'Senzu_999AA76C'},
+    {'id': '4692212961', 'password': 'Senzu_999XWWZL'}
+]
 
 def start_spam_server():
     time.sleep(2)
-    accounts = load_accounts()
-    if not accounts:
-        err("[SERVER] No accounts loaded")
-        return
-    info(f"[SERVER] Starting {len(accounts)} spam accounts")
-    for acc in accounts:
+    info(f"[SERVER] Starting {len(SPAM_ACCOUNTS)} spam accounts")
+    for acc in SPAM_ACCOUNTS:
         try:
             xCLF(acc['id'], acc['password'])
         except Exception as e:
