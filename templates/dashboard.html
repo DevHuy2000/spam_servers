@@ -4,16 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FF Bot - Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        html {
+            background-color: #1a1a2e;
+        }
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background-attachment: fixed;
             min-height: 100vh;
+            color: white;
         }
         .navbar {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(26, 26, 46, 0.85);
+            -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             padding: 15px 30px;
@@ -44,7 +53,8 @@
             margin-bottom: 30px;
         }
         .stat-card {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(30, 40, 70, 0.9);
+            -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             border-radius: 15px;
             padding: 20px;
@@ -60,7 +70,7 @@
         }
         .tab {
             padding: 10px 20px;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(30, 40, 70, 0.9);
             border-radius: 10px;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -73,7 +83,8 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .card {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(30, 40, 70, 0.9);
+            -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             border-radius: 15px;
             border: 1px solid rgba(255, 255, 255, 0.1);
