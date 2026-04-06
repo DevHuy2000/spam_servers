@@ -409,39 +409,20 @@ class xCLF:
                     pass
             self._squad_active = True
 
-            def send_join():
-                try:
-                    pkt = JoinSq(teamcode, self.key, self.iv)
-                    self.CliEnts2.send(pkt)
-                    info(f"[SQUAD:{self.id}] JoinSq sent → {teamcode}")
-                    return True
-                except Exception as e:
-                    err(f"[SQUAD:{self.id}] JoinSq send failed: {e}")
-                    return False
-
-            if not send_join():
+            try:
+                pkt = JoinSq(teamcode, self.key, self.iv)
+                self.CliEnts2.send(pkt)
+            except Exception as e:
                 self._squad_active = False
-                return {"success": False, "reason": "Send JoinSq failed"}
+                return {"success": False, "reason": f"Send failed: {e}"}
 
             buf = b""
             buf_offset = 0
             start = time.time()
-            last_join_time = time.time()
 
-            while time.time() - start < 25 and self._running:
+            while time.time() - start < 15 and self._running:
                 try:
                     chunk = self._squad_queue.get(timeout=0.5)
-
-                    # b"" = socket2 reconnected, gui lai JoinSq
-                    if chunk == b"":
-                        info(f"[SQUAD:{self.id}] Socket2 reconnected, resend JoinSq")
-                        buf = b""
-                        buf_offset = 0
-                        time.sleep(0.5)
-                        send_join()
-                        last_join_time = time.time()
-                        continue
-
                     buf += chunk
 
                     i = buf_offset
@@ -480,13 +461,14 @@ class xCLF:
 
                             OwNer, SQuAD, ChaT = GeTSQDaTa(dT)
                             info(f"[SQUAD:{self.id}] parsed O={OwNer} S={SQuAD} C={ChaT}")
-                            # Phai co du ca 3 truong
+                            # FIX: phai co du ca 3 truong, neu thieu SQuAD thi doi packet ke tiep
                             if OwNer and ChaT and SQuAD:
                                 try:
                                     self.CliEnts2.send(ExitSq('000000', self.key, self.iv))
                                 except:
                                     pass
-                                time.sleep(0.3)
+                                # FIX: sleep truoc, set False sau de tranh race condition
+                                time.sleep(0.5)
                                 self._squad_active = False
                                 return {"success": True, "OwNer_UiD": OwNer,
                                         "SQuAD_CoDe": SQuAD, "ChaT_CoDe": ChaT}
@@ -518,22 +500,18 @@ class xCLF:
             err(f"[CHAT:{client.id}] CliEnts=None, bo qua")
             return
         try:
-            # Chuyen sang int/str dung kieu
-            uid_int = int(owner_uid)
-            chat_str = str(chat_code)
-            client.CliEnts.send(OpenCh(uid_int, chat_str, client.key, client.iv))
+            client.CliEnts.send(OpenCh(owner_uid, chat_code, client.key, client.iv))
             time.sleep(1)
             for i in range(count):
                 if client.CliEnts is None:
                     break
                 client.CliEnts.send(
-                    MsqSq(f'[b][c]{generate_random_color()}{message}', uid_int, client.key, client.iv))
+                    MsqSq(f'[b][c]{generate_random_color()}{message}', owner_uid, client.key, client.iv))
                 if progress_callback:
                     progress_callback(i + 1, count, "chat")
                 time.sleep(0.5)
-            err(f"[CHAT:{client.id}] Done {count} msgs → uid={uid_int}")
         except Exception as e:
-            err(f"[CHAT:{client.id}] _chat_worker loi: {e}")
+            err(f"[CHAT:{client.id}] _chat_worker lỗi: {e}")
 
     def _room_worker(self, client, owner_uid, count, progress_callback=None):
         # Doi socket2 san sang toi da 10s
@@ -545,11 +523,10 @@ class xCLF:
             err(f"[ROOM:{client.id}] CliEnts2=None, bo qua")
             return
         try:
-            uid_int = int(owner_uid)
             k = client.key if isinstance(client.key, bytes) else bytes.fromhex(client.key)
             iv = client.iv if isinstance(client.iv, bytes) else bytes.fromhex(client.iv)
             room_pkt = _openRoom(k, iv)
-            spm_pkt = _spmRoom(k, iv, uid_int)
+            spm_pkt = _spmRoom(k, iv, owner_uid)
             client.CliEnts2.send(room_pkt)
             time.sleep(0.3)
             for i in range(count):
@@ -559,9 +536,8 @@ class xCLF:
                 if progress_callback:
                     progress_callback(i + 1, count, "room")
                 time.sleep(0.05)
-            err(f"[ROOM:{client.id}] Done {count} room spam → uid={uid_int}")
         except Exception as e:
-            err(f"[ROOM:{client.id}] _room_worker loi: {e}")
+            err(f"[ROOM:{client.id}] _room_worker lỗi: {e}")
 
     def SeNd_SpaM_MsG(self, owner_uid, chat_code, message, count=50, progress_callback=None):
         try:
@@ -603,10 +579,8 @@ class xCLF:
         self.update_status("connecting", f"Connecting to {host2}:{port2}")
         while True:
             try:
-                new_sock = socket.create_connection((host2, int(port2)), timeout=15)
-                new_sock.send(bytes.fromhex(tok))
-                # Gan vao self.CliEnts2 sau khi ket noi thanh cong
-                self.CliEnts2 = new_sock
+                self.CliEnts2 = socket.create_connection((host2, int(port2)))
+                self.CliEnts2.send(bytes.fromhex(tok))
                 self.update_status("connected", "Socket2 connected")
                 while True:
                     try:
@@ -624,9 +598,6 @@ class xCLF:
             except Exception as e:
                 err(f"[SOCK2:{self.id}] Kết nối thất bại: {e}")
                 self.update_status("error", f"Socket2 error: {e}")
-                # Neu dang squad active thi bao loi vao queue de GeTinFoSqMsG biet
-                if self._squad_active:
-                    self._squad_queue.put(b"")
                 time.sleep(2)
                 continue
 
@@ -664,14 +635,17 @@ class xCLF:
         # --- Giu Socket1 song, neu chet thi reconnect ---
         while True:
             try:
-                self.CliEnts.settimeout(30)
                 data = self.CliEnts.recv(1024)
                 if len(data) == 0:
-                    try: self.CliEnts.close()
-                    except: pass
+                    # Server dong ket noi
+                    try:
+                        self.CliEnts.close()
+                    except:
+                        pass
                     self.CliEnts = None
                     self.update_status("connecting", "Socket1 disconnected, reconnecting...")
                     time.sleep(2)
+                    # Reconnect Socket1 trong vong lap hien tai, KHONG de quy
                     while True:
                         try:
                             self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
@@ -682,30 +656,33 @@ class xCLF:
                             break
                         except Exception as e:
                             err(f"[SOCK1:{self.id}] Reconnect failed: {e}")
-                            try: self.CliEnts.close()
-                            except: pass
+                            try:
+                                self.CliEnts.close()
+                            except:
+                                pass
                             self.CliEnts = None
                             time.sleep(3)
                 else:
                     self.retry_count = 0
-            except socket.timeout:
-                # Timeout la binh thuong (keep-alive check), KHONG reconnect, KHONG anh huong squad
-                continue
             except OSError as e:
+                # Errno 9 (Bad file descriptor) hoac loi socket khac
+                # Khong log lien tuc — chi log 1 lan roi sleep va reconnect
                 if self.CliEnts is not None:
                     err(f"[SOCK1:{self.id}] Socket error: {e}")
-                    try: self.CliEnts.close()
-                    except: pass
+                    try:
+                        self.CliEnts.close()
+                    except:
+                        pass
                     self.CliEnts = None
-                # Chi re-login neu KHONG dang squad active
-                if not self._squad_active:
-                    self.retry_count += 1
-                    if self.retry_count >= self.max_retries:
-                        self.update_status("error", "Max retries — re-login")
-                        self._sock2_started = False
-                        threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
-                        return
+                self.retry_count += 1
+                if self.retry_count >= self.max_retries:
+                    self.update_status("error", "Max retries — re-login")
+                    # Re-login hoan toan thay vi loop Errno 9 mai mai
+                    self._sock2_started = False
+                    threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
+                    return
                 time.sleep(3)
+                # Reconnect trong vong lap
                 try:
                     self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
                     self.CliEnts.send(bytes.fromhex(tok))
@@ -716,8 +693,10 @@ class xCLF:
                     err(f"[SOCK1:{self.id}] Reconnect error: {re}")
             except Exception as e:
                 err(f"[SOCK1:{self.id}] Unexpected error: {e}")
-                try: self.CliEnts.close()
-                except: pass
+                try:
+                    self.CliEnts.close()
+                except:
+                    pass
                 self.CliEnts = None
                 time.sleep(3)
 
@@ -902,7 +881,6 @@ class xCLF:
 # ==================== SPAM ACCOUNTS ====================
 SPAM_ACCOUNTS = [
     {'id': '4691534392', 'password': 'Senzu_999AA76C'},
-    {'id': '4692212961', 'password': 'Senzu_999XWWZL'}
 ]
 
 def start_spam_server():
@@ -1165,79 +1143,6 @@ def api_ban_account():
         return jsonify({'success': False, 'error': 'access_token is required'})
     
     result = ban_account(access_token)
-    return jsonify(result)
-
-# ==================== TIKTOK BUFF VIEWS ====================
-_TIKTOK_API_URL = 'https://leofame.com/ar/free-tiktok-views'
-_TIKTOK_BASE_HEADERS = {
-    'authority': 'leofame.com',
-    'accept': '*/*',
-    'accept-language': 'ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7',
-    'content-type': 'application/x-www-form-urlencoded',
-    'origin': 'https://leofame.com',
-    'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
-    'sec-ch-ua-mobile': '?1',
-    'sec-ch-ua-platform': '"Android"',
-    'sec-fetch-dest': 'empty',
-    'sec-fetch-mode': 'cors',
-    'sec-fetch-site': 'same-origin',
-}
-_TIKTOK_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
-
-def _tiktok_get_session():
-    try:
-        sess = requests.Session()
-        resp = sess.get(_TIKTOK_API_URL, headers={
-            'User-Agent': _TIKTOK_UA,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Upgrade-Insecure-Requests': '1'
-        }, timeout=15)
-        cookies = sess.cookies.get_dict()
-        token = None
-        if 'name="token" value="' in resp.text:
-            token = resp.text.split('name="token" value="')[1].split('"')[0]
-        return cookies, token
-    except Exception as e:
-        err(f"[TIKTOK] get_session error: {e}")
-        return None, None
-
-def _tiktok_send_views(link):
-    cookies, token = _tiktok_get_session()
-    if not token or not cookies or 'ci_session' not in cookies:
-        return {'success': False, 'error': 'Không lấy được token/session từ leofame.com'}
-    try:
-        t0 = time.time()
-        resp = requests.post(
-            _TIKTOK_API_URL,
-            params={'api': '1'},
-            cookies=cookies,
-            headers={**_TIKTOK_BASE_HEADERS, 'referer': _TIKTOK_API_URL,
-                     'user-agent': _TIKTOK_UA, 'x-requested-with': 'XMLHttpRequest'},
-            data={'token': token, 'timezone_offset': 'Asia/Ho_Chi_Minh', 'free_link': link},
-            timeout=25
-        )
-        elapsed = round(time.time() - t0, 2)
-        try:
-            body = resp.json()
-        except:
-            body = {'raw': resp.text[:500]}
-        if 'يرجى الانتظار' in resp.text:
-            return {'success': False, 'error': 'Rate limit: hệ thống yêu cầu chờ 24 giờ theo IP', 'elapsed': elapsed}
-        is_ok = 'error' not in body and resp.status_code == 200
-        return {'success': is_ok, 'elapsed': elapsed, 'response': body}
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-@app.route('/api/tiktok/buff_views', methods=['POST'])
-@login_required
-def api_tiktok_buff_views():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    link = data.get('link', '').strip()
-    if not link:
-        return jsonify({'success': False, 'error': 'Link TikTok là bắt buộc'})
-    result = _tiktok_send_views(link)
     return jsonify(result)
 
 # ==================== HEALTH CHECK ====================
@@ -1593,7 +1498,6 @@ def create_templates():
         <div class="tabs">
             <div class="tab active" data-tab="spam">🎯 Spam Tool</div>
             <div class="tab" data-tab="account">👤 Account Tools</div>
-            <div class="tab" data-tab="tiktok">📱 TikTok Views</div>
             <div class="tab" data-tab="clients">📡 Connected Clients</div>
         </div>
         
@@ -1669,22 +1573,7 @@ def create_templates():
             </div>
         </div>
         
-        <!-- Tab 3: TikTok Buff Views -->
-        <div id="tab-tiktok" class="tab-content">
-            <div class="card">
-                <div class="card-header">📱 TikTok Buff Views</div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label>Link Video TikTok</label>
-                        <input type="text" id="tiktokLink" placeholder="https://www.tiktok.com/@user/video/...">
-                    </div>
-                    <button id="buffViewsBtn" style="width:100%;">🚀 Buff Views</button>
-                    <div id="tiktokResult" class="result-box" style="display:none; margin-top:15px;"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab 4: Connected Clients -->
+        <!-- Tab 3: Connected Clients -->
         <div id="tab-clients" class="tab-content">
             <div class="card">
                 <div class="card-header">📡 Connected Clients</div>
@@ -1756,10 +1645,7 @@ def create_templates():
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('squadInfo').style.display = 'block';
-                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4>
-                        <p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p>
-                        <p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>
-                        <p><strong>Squad Code:</strong> <code>${data.SQuAD_CoDe || 'N/A'}</code></p>`;
+                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4><p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p><p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>`;
                     document.getElementById('spamBtn').disabled = false;
                     showAlert('Squad info retrieved!', 'success');
                 } else { showAlert(`Failed: ${data.reason || data.error}`, 'error'); }
@@ -1923,37 +1809,6 @@ def create_templates():
             finally { btn.disabled = false; btn.textContent = 'Ban Account'; }
         }
         
-        async function buffViews() {
-            const link = document.getElementById('tiktokLink').value.trim();
-            if (!link) { showAlert('Nhập link TikTok', 'error'); return; }
-            const btn = document.getElementById('buffViewsBtn');
-            const resultDiv = document.getElementById('tiktokResult');
-            btn.disabled = true; btn.textContent = 'Đang xử lý...';
-            resultDiv.style.display = 'block';
-            resultDiv.innerHTML = '<p style="color:rgba(255,255,255,0.6);">⏳ Đang gửi request...</p>';
-            try {
-                const response = await fetch('/api/tiktok/buff_views', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ link })
-                });
-                const data = await response.json();
-                if (data.success) {
-                    resultDiv.innerHTML = `<h4>✅ Buff Views thành công!</h4>
-                        <p><strong>Thời gian:</strong> ${data.elapsed}s</p>
-                        <p><strong>Response:</strong> <code>${JSON.stringify(data.response)}</code></p>`;
-                    showAlert('Buff views thành công!', 'success');
-                } else {
-                    resultDiv.innerHTML = `<h4>❌ Thất bại</h4><p>${data.error || JSON.stringify(data)}</p>`;
-                    showAlert(`Thất bại: ${data.error || 'Unknown error'}`, 'error');
-                }
-            } catch(e) { 
-                resultDiv.innerHTML = `<h4>❌ Lỗi kết nối</h4><p>${e.message}</p>`;
-                showAlert('Lỗi kết nối server', 'error'); 
-            }
-            finally { btn.disabled = false; btn.textContent = '🚀 Buff Views'; }
-        }
-
         document.getElementById('getSquadBtn').addEventListener('click', getSquadInfo);
         document.getElementById('spamBtn').addEventListener('click', startSpam);
         document.getElementById('getRecoveryInfoBtn').addEventListener('click', getRecoveryInfo);
@@ -1963,7 +1818,6 @@ def create_templates():
         document.getElementById('cancelRecoveryBtn').addEventListener('click', cancelRecovery);
         document.getElementById('getLinkedBtn').addEventListener('click', getLinkedPlatforms);
         document.getElementById('banAccountBtn').addEventListener('click', banAccount);
-        document.getElementById('buffViewsBtn').addEventListener('click', buffViews);
         
         loadStatus();
         setInterval(loadStatus, 10000);
@@ -1974,22 +1828,19 @@ def create_templates():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     create_templates()
-    port = int(os.environ.get("PORT", 5000))
-    print(f"[FF_BOT] Starting... Web: http://localhost:{port}", flush=True)
-
+    print("[FF_BOT] Starting...", flush=True)
+    
     # Start spam server in background
     spam_thread = threading.Thread(target=start_spam_server, daemon=True)
     spam_thread.start()
-
-    # Chi disable werkzeug khi KHONG phai DEV mode
-    if not _DEV_MODE:
+    
+    # Run Flask - dung Werkzeug voi log tat hoat toan
+    try:
         import logging as _log
         _log.getLogger("werkzeug").disabled = True
         app.logger.disabled = True
-
-    try:
-        app.run(host='0.0.0.0', port=port,
-                debug=False, threaded=True, use_reloader=False)
+        app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)),
+                debug=False, threaded=True, use_reloader=True)
     except Exception as e:
         err(f"Failed to start server: {e}")
         sys.exit(1)
