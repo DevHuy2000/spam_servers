@@ -1,6 +1,4 @@
 requests
-Flask-SocketIO==5.3.4
-python-socketio==5.9.0
 psutil
 PyJWT
 protobuf
@@ -10,4 +8,3 @@ urllib3
 pycryptodome
 protobuf_decoder
 Flask
-eventlet

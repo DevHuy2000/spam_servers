@@ -9,13 +9,10 @@ import queue
 import urllib3
 from datetime import datetime
 from flask import Flask, request, jsonify, session, render_template_string
-from flask_socketio import SocketIO
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import jwt
 import requests
-import eventlet
-eventlet.monkey_patch()
 
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -67,7 +64,6 @@ def warn(msg): logger.warning(msg)
 # ==================== FLASK APP ====================
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'freefire-bot-secret-key')
-socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 # ==================== CONFIGURATION ====================
 freefire_version = "OB52"
@@ -165,6 +161,7 @@ class xCLF:
         self.retry_count = 0
         self._squad_queue = queue.Queue()
         self._squad_active = False
+        self._sock2_started = False
         
         with connected_clients_lock:
             connected_clients[self.id] = self
@@ -379,58 +376,105 @@ class xCLF:
     def ConnEcT_SerVer(self, Token, tok, host, port, key, iv, host2, port2):
         self.key = key
         self.iv = iv
-        
-        retry_count = 0
-        while retry_count < 5:
+
+        # --- Connect Socket1 ---
+        while True:
             try:
                 info(f"[SOCK1:{self.id}] Connecting {host}:{port}")
-                self.CliEnts = socket.create_connection((host, int(port)), timeout=10)
+                self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
                 self.CliEnts.send(bytes.fromhex(tok))
                 self.CliEnts.recv(1024)
                 info(f"[SOCK1:{self.id}] Connected")
                 break
             except Exception as e:
-                retry_count += 1
-                err(f"[SOCK1:{self.id}] Failed ({retry_count}/5): {e}")
-                time.sleep(2)
-                if retry_count >= 5:
-                    threading.Timer(30, lambda: self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)).start()
-                    return
-        
-        threading.Thread(
-            target=self.ConnEcT_SerVer_OnLiNe,
-            args=(Token, tok, host, port, key, iv, host2, port2),
-            daemon=True
-        ).start()
-        
+                err(f"[SOCK1:{self.id}] Failed: {e}")
+                try:
+                    self.CliEnts.close()
+                except:
+                    pass
+                self.CliEnts = None
+                time.sleep(3)
+
+        # --- Start Socket2 thread (chỉ start 1 lần) ---
+        if not self._sock2_started:
+            self._sock2_started = True
+            threading.Thread(
+                target=self.ConnEcT_SerVer_OnLiNe,
+                args=(Token, tok, host, port, key, iv, host2, port2),
+                daemon=True
+            ).start()
+
         self.mark_ready()
-        
+
+        # --- Giữ Socket1 sống, nếu chết thì reconnect ---
         while True:
             try:
-                self.CliEnts.settimeout(5.0)
-                data = self.CliEnts.recv(4096)
+                self.CliEnts.settimeout(30)
+                data = self.CliEnts.recv(1024)
                 if len(data) == 0:
-                    break
-                self.retry_count = 0
+                    try:
+                        self.CliEnts.close()
+                    except:
+                        pass
+                    self.CliEnts = None
+                    self.is_ready = False
+                    time.sleep(2)
+                    while True:
+                        try:
+                            self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
+                            self.CliEnts.send(bytes.fromhex(tok))
+                            self.CliEnts.recv(1024)
+                            self.is_ready = True
+                            self.retry_count = 0
+                            info(f"[SOCK1:{self.id}] Reconnected")
+                            break
+                        except Exception as e:
+                            err(f"[SOCK1:{self.id}] Reconnect failed: {e}")
+                            try:
+                                self.CliEnts.close()
+                            except:
+                                pass
+                            self.CliEnts = None
+                            time.sleep(3)
+                else:
+                    self.retry_count = 0
             except socket.timeout:
+                # Timeout bình thường - keep-alive check, KHÔNG reconnect
                 continue
+            except OSError as e:
+                if self.CliEnts is not None:
+                    err(f"[SOCK1:{self.id}] Socket error: {e}")
+                    try:
+                        self.CliEnts.close()
+                    except:
+                        pass
+                    self.CliEnts = None
+                self.is_ready = False
+                if not self._squad_active:
+                    self.retry_count += 1
+                    if self.retry_count >= self.max_retries:
+                        self.retry_count = 0
+                        self._sock2_started = False
+                        threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
+                        return
+                time.sleep(3)
+                try:
+                    self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
+                    self.CliEnts.send(bytes.fromhex(tok))
+                    self.CliEnts.recv(1024)
+                    self.is_ready = True
+                    self.retry_count = 0
+                except Exception as re:
+                    err(f"[SOCK1:{self.id}] Reconnect error: {re}")
             except Exception as e:
-                err(f"[SOCK1:{self.id}] Error: {e}")
-                self.retry_count += 1
-                if self.retry_count >= self.max_retries:
-                    break
-                time.sleep(2)
-        
-        self.is_ready = False
-        try:
-            if self.CliEnts:
-                self.CliEnts.close()
-            if self.CliEnts2:
-                self.CliEnts2.close()
-        except:
-            pass
-        
-        self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
+                err(f"[SOCK1:{self.id}] Unexpected error: {e}")
+                try:
+                    self.CliEnts.close()
+                except:
+                    pass
+                self.CliEnts = None
+                self.is_ready = False
+                time.sleep(3)
     
     def GeT_Key_Iv(self, serialized_data):
         try:
@@ -1367,4 +1411,4 @@ if __name__ == "__main__":
     threading.Thread(target=start_spam_server, daemon=True).start()
     
     port = int(os.environ.get('PORT', 8080))
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True, use_reloader=False)
