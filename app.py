@@ -591,6 +591,7 @@ class xCLF:
         # --- Connect Socket1 ---
         while True:
             try:
+                err(f"[SOCK1:{self.id}] Trying {host}:{port}...")
                 self.CliEnts = socket.create_connection((host, int(port)), timeout=15)
                 self.CliEnts.send(bytes.fromhex(tok))
                 self.CliEnts.recv(1024)
@@ -762,6 +763,8 @@ class xCLF:
             port = addr[len(addr)-5:]
             ip2 = addr2[:len(addr2)-6]
             port2 = addr2[len(addr2)-5:]
+            # Log IP/port de kiem tra Railway co bi block khong
+            err(f"[LOGIN:{self.id}] SOCK1={ip}:{port} SOCK2={ip2}:{port2}")
             return ip, port, ip2, port2
         except Exception as e:
             err(f"[LOGIN:{self.id}] DataLogin error: {e}")
