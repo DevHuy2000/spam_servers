@@ -14,6 +14,9 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import jwt
 import requests
+import eventlet
+eventlet.monkey_patch()
+
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
